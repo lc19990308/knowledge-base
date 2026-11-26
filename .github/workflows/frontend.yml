@@ -7,7 +7,7 @@ name: 前端 CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   group: frontend-${{ github.ref }}

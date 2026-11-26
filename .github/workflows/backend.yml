@@ -6,7 +6,7 @@ name: 后端 CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
 
 # 同一分支的新提交取消上一轮，节省 runner
 concurrency:

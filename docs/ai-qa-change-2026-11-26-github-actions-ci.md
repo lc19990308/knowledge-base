@@ -9,17 +9,17 @@
 ### 1. 工作流文件
 
 - `.github/workflows/backend.yml`
-  - 触发：`pull_request` 全量 + `push main`。
+  - 触发：`pull_request` 全量 + `push master`（默认分支）。
   - `concurrency: backend-${{ github.ref }}` + `cancel-in-progress`：同分支新提交取消上一轮。
   - `permissions: contents: read`：最小权限。
   - `services.postgres`（`postgres:16-alpine`，健康检查 `pg_isready`）+ `IT_DB_*` 环境变量：数据库集成测试跑真实 PostgreSQL，不依赖外部库。
   - 步骤：`actions/checkout` → `setup-java`（temurin 17 + maven 缓存）→ `mvn -B -ntp verify`（编译 + 单元/集成测试 + 打包）。
-  - 产物：仅 main 上传 `backend/target/*.jar`，命名带 commit 短 SHA（`backend-jar-<short>`），保留 14 天。
+  - 产物：仅默认分支上传 `backend/target/*.jar`，命名带 commit 短 SHA（`backend-jar-<short>`），保留 14 天。
 - `.github/workflows/frontend.yml`
   - 触发与并发/权限同上。
   - `setup-node` 22 + `npm` 缓存（`cache-dependency-path: frontend/package-lock.json`）。
   - 步骤：`npm ci`（锁文件不一致直接失败）→ `npm run lint`（`--max-warnings 0`）→ `npm run format:check` → `npm run build`（脚本内置 `vue-tsc --noEmit`，类型错误阻断）。
-  - 产物：仅 main 上传 `frontend/dist/`，命名带短 SHA，保留 14 天。
+  - 产物：仅默认分支上传 `frontend/dist/`，命名带短 SHA，保留 14 天。
 - 显式不纳入：`frontend/e2e/run.mjs`。它依赖本机 `initdb`/`postgres`/Chrome，且在隔离副本里用 `mvn -o` 离线构建后端；直接放到托管 runner 上会失败。纳入前需先把离线构建改为带缓存，并另开 workflow。
 
 ### 2. PR 模板
@@ -57,4 +57,5 @@
 - **无 CD**：部署目标未定，仓库里没有 Dockerfile/部署脚本；确定目标后再补 deploy job 与 environment 审批。
 - **无覆盖率阈值**：后端未接 JaCoCo，前端无单测框架，暂不设覆盖率门禁；接入后阈值需与团队约定。
 - **E2E 未进流水线**：见上文，需要改造 `e2e/stack.mjs` 的离线构建依赖。
-- **main 分支保护未设置**：需要仓库管理员在 GitHub 上启用「required status checks = 后端 CI / 前端 CI」，本次未改仓库设置。
+- **默认分支与保护**：默认分支由 `main` 更名为 `master`（本地与远端同步，旧 `main` 已删除）；`master` 已开保护——required status checks 为 `质量门禁 + 打包`、`质量门禁 + 构建`（strict），禁强推、禁删除，不强制人工 review（单人仓库自审会卡死）。直接 push 仍不受状态检查约束（GitHub 的保护规则只约束 PR 合并），需要硬约束时应改用 Rulesets。
+- **README**：根目录新增 `README.md`（中文）与 `README.en.md`（英文），覆盖技术栈、本地运行、验证命令、CI/CD 现状与文档索引。
