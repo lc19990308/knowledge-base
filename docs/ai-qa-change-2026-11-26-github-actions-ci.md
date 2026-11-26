@@ -69,3 +69,5 @@ GitHub Free 的**私有仓库不支持分支保护与 Rulesets**（两种 API �
 - **E2E 未进流水线**：见上文，需要改造 `e2e/stack.mjs` 的离线构建依赖。
 - **默认分支与保护**：默认分支由 `main` 更名为 `master`（本地与远端同步，旧 `main` 已删除）；`master` 已开保护——required status checks 为 `质量门禁 + 打包`、`质量门禁 + 构建`（strict），禁强推、禁删除，不强制人工 review（单人仓库自审会卡死）。直接 push 仍不受状态检查约束（GitHub 的保护规则只约束 PR 合并），需要硬约束时应改用 Rulesets。
 - **README**：根目录新增 `README.md`（中文）与 `README.en.md`（英文），覆盖技术栈、本地运行、验证命令、CI/CD 现状与文档索引。
+- **保护规则实测**：临时分支开 PR #1（探针），检查进行中 `mergeStateStatus=BLOCKED`，两项检查完成后变 `CLEAN`；随后关闭 PR 并删除分支。保护只约束 PR 合并，直接 push master 仍然放行；要硬拦直推需另加 Rulesets（公开仓库已支持）。
+- **注意**：required checks 的 context 是 job 名（`质量门禁 + 打包`、`质量门禁 + 构建`）。以后重命名 job 必须同步更新保护规则，否则 PR 永远停留在「等待未出现的检查」。
