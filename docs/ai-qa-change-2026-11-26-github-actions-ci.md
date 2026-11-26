@@ -69,5 +69,24 @@ GitHub Free 的**私有仓库不支持分支保护与 Rulesets**（两种 API �
 - **E2E 未进流水线**：见上文，需要改造 `e2e/stack.mjs` 的离线构建依赖。
 - **默认分支与保护**：默认分支由 `main` 更名为 `master`（本地与远端同步，旧 `main` 已删除）；`master` 已开保护——required status checks 为 `质量门禁 + 打包`、`质量门禁 + 构建`（strict），禁强推、禁删除，不强制人工 review（单人仓库自审会卡死）。直接 push 仍不受状态检查约束（GitHub 的保护规则只约束 PR 合并），需要硬约束时应改用 Rulesets。
 - **README**：根目录新增 `README.md`（中文）与 `README.en.md`（英文），覆盖技术栈、本地运行、验证命令、CI/CD 现状与文档索引。
-- **保护规则实测**：临时分支开 PR #1（探针），检查进行中 `mergeStateStatus=BLOCKED`，两项检查完成后变 `CLEAN`；随后关闭 PR 并删除分支。保护规则同样检查直接 push：本仓库 `enforce_admins=false`，管理员直推会被放行但在 push 输出里提示 `Bypassed rule violations ... required status checks are expected`；普通协作者会被拒绝。要让管理员也必须走 PR，把 `enforce_admins` 设为 true 即可（届时直推 master 会被拒绝，只能 PR 合并）。
+- **保护规则实测**：临时分支开 PR #1（探针），检查进行中 `mergeStateStatus=BLOCKED`，两项检查完成后变 `CLEAN`；随后关闭 PR 并删除分支。**已开启 `enforce_admins=true`（2026-11-26 追加）**：管理员也受同一套规则约束。实测把探针提交直推 `master` 被拒：
+
+```
+remote: error: GH006: Protected branch update failed for refs/heads/master.
+remote: - 2 of 2 required status checks are expected.
+! [remote rejected] HEAD -> master (protected branch hook declined)
+```
+
+因此 `master` 现在只能通过 PR 合入（无人工 review 要求，检查全绿后即可合并）：
+
+```sh
+git checkout -b feat/xxx
+git commit -am "feat: ..."
+git push -u origin feat/xxx
+gh pr create --fill
+# 等两条检查变绿后
+gh pr merge --squash --delete-branch
+```
+
+需要应急直推时，只能临时把 `enforce_admins` 置回 false（Settings → Branches 或 `PUT .../branches/master/protection`），推完恢复 true；这期间门禁对管理员不生效，必须记录原因。
 - **注意**：required checks 的 context 是 job 名（`质量门禁 + 打包`、`质量门禁 + 构建`）。以后重命名 job 必须同步更新保护规则，否则 PR 永远停留在「等待未出现的检查」。
