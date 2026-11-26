@@ -1,0 +1,70 @@
+# 后端 CI：质量门禁 + 构建产物
+# 触发：PR 全量门禁；main push 产出 jar（branches 保护后可要求必须过闸）
+# 数据库集成测试跑真实 PostgreSQL service（IT_DB_* 由环境变量注入），不依赖外部数据库
+name: 后端 CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一分支的新提交取消上一轮，节省 runner
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: 质量门禁 + 打包
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: qa
+          POSTGRES_PASSWORD: qa
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qa -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # 与本地一致：每个集成测试类自建独立 schema，结束后清理
+      IT_DB_URL: jdbc:postgresql://localhost:5432/postgres
+      IT_DB_USER: qa
+      IT_DB_PASSWORD: qa
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      # verify = 编译 + 单元/集成测试 + 打包（含数据库集成测试）
+      - name: mvn verify（编译 + 测试 + 打包）
+        run: mvn -B -ntp verify
+
+      - name: 记录短 SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 jar（仅 main）
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar-${{ steps.sha.outputs.short }}
+          path: backend/target/*.jar
+          retention-days: 14

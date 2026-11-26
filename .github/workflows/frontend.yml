@@ -1,0 +1,60 @@
+# 前端 CI：质量门禁 + 构建产物
+# 触发：PR 全量门禁；main push 产出 dist
+# E2E（frontend/e2e/run.mjs）依赖本机 initdb/postgres/Chrome 且离线构建后端，未纳入本流水线；
+# 需要纳入时另开 workflow，并先把 mvn -o 的离线限制改成带缓存
+name: 前端 CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: 质量门禁 + 构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 按锁文件安装；锁文件与 package.json 不一致会直接失败，不自动改锁
+      - name: npm ci
+        run: npm ci
+
+      - name: eslint（警告视为失败）
+        run: npm run lint
+
+      - name: prettier 格式检查
+        run: npm run format:check
+
+      # build 脚本内置 vue-tsc 类型检查，失败即阻断
+      - name: 类型检查 + 生产构建
+        run: npm run build
+
+      - name: 记录短 SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 dist（仅 main）
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ steps.sha.outputs.short }}
+          path: frontend/dist/
+          retention-days: 14
