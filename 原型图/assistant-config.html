@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>助手配置 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.cfg-grid { display: grid; grid-template-columns: 280px 1fr; gap: var(--space-4); align-items: start; }
+@media (max-width: 960px) { .cfg-grid { grid-template-columns: 1fr; } }
+.asst-item { display: flex; align-items: center; gap: 10px; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-2); background: var(--surface); cursor: pointer; }
+.asst-item.on { border-color: var(--accent); background: var(--surface-warm); }
+.asst-item .a-icon { width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--surface-warm); color: var(--accent); display: grid; place-items: center; font-weight: 700; flex: none; }
+.asst-item b { font-size: var(--text-sm); display: block; }
+.asst-item span.s { font-size: var(--text-xs); color: var(--muted); }
+.bind-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.bind-row:last-child { border-bottom: none; }
+.bind-row .b-name { flex: 1; }
+.bind-row .b-name b { font-size: var(--text-sm); }
+.bind-row .b-name span { display: block; font-size: var(--text-xs); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html" aria-current="page">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>助手配置</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content">
+      <div class="page-head" data-od-id="cfg-head">
+        <div><h2>助手配置</h2><p class="sub">一个助手可绑定多个管理员开放的空间；绑定多个空间不扩大用户权限</p></div>
+        <div class="actions"><button class="btn btn-primary">＋ 新建助手</button></div>
+      </div>
+
+      <div class="cfg-grid">
+        <!-- 助手列表 -->
+        <section class="card" data-od-id="assistant-list" aria-label="助手列表" style="padding:var(--space-3);">
+          <div class="text-xs muted" style="padding:0 4px 8px; font-weight:700;">助手（3）</div>
+          <div class="asst-item on">
+            <span class="a-icon">差</span>
+            <span style="min-width:0;"><b>差旅政策助手</b><span class="s">绑定 2 个空间 · 启用中</span></span>
+          </div>
+          <div class="asst-item">
+            <span class="a-icon">安</span>
+            <span style="min-width:0;"><b>安全生产问答</b><span class="s">绑定 1 个空间 · 启用中</span></span>
+          </div>
+          <div class="asst-item">
+            <span class="a-icon">客</span>
+            <span style="min-width:0;"><b>客服话术助手</b><span class="s">绑定 3 个空间 · 已停用</span></span>
+          </div>
+        </section>
+
+        <!-- 详情 -->
+        <section class="card" data-od-id="assistant-detail" aria-label="助手详情">
+          <div class="card-head"><h3>差旅政策助手</h3><span class="badge badge-ok"><span class="dot"></span>启用中</span><span class="grow"></span><button class="btn btn-sm btn-danger">停用</button></div>
+
+          <div class="grid-2" style="align-items:start;">
+            <div>
+              <div class="field">
+                <label>助手名称</label>
+                <input type="text" value="差旅政策助手">
+              </div>
+              <div class="field">
+                <label>回答模板</label>
+                <select>
+                  <option selected>助手级：差旅专用模板（优先于全局）</option>
+                  <option>全局默认模板</option>
+                </select>
+                <span class="help">助手模板优先于全局模板；模板不得覆盖权限、引用和政策有效性规则</span>
+              </div>
+              <div class="field">
+                <label>模型</label>
+                <select><option selected>GLM-5.3（继承全局配置）</option><option>GLM-5.3-Flash</option></select>
+                <span class="help">模型从全局配置继承，助手级不可单独指定未开放模型</span>
+              </div>
+            </div>
+
+            <div>
+              <div class="card-head" style="margin-bottom:8px;"><h3 style="font-size:var(--text-sm);">绑定空间</h3></div>
+              <div class="bind-row">
+                <div class="b-name"><b>差旅报销制度</b><span>已发布 · 47 可检索</span></div>
+                <span class="badge badge-ok">开放中</span>
+                <label class="switch"><input type="checkbox" checked aria-label="绑定差旅报销制度"><span class="track"></span></label>
+              </div>
+              <div class="bind-row">
+                <div class="b-name"><b>供应商准入资料</b><span>已驳回 · 对用户不可见</span></div>
+                <span class="badge badge-draft">未发布</span>
+                <label class="switch"><input type="checkbox" checked aria-label="绑定供应商准入资料"><span class="track"></span></label>
+              </div>
+              <div class="bind-row">
+                <div class="b-name"><b>合规与风控政策</b><span>审核中 · 重审期间不可见</span></div>
+                <span class="badge badge-review">审核中</span>
+                <label class="switch"><input type="checkbox" aria-label="绑定合规与风控政策"><span class="track"></span></label>
+              </div>
+              <div class="notice notice-info mt-4" style="font-size:var(--text-xs);">
+                <span class="n-icon">ℹ</span>
+                <span>实际回答只使用当前用户<strong>有权访问且已发布</strong>的空间。「供应商准入资料」虽已绑定，但对无权限用户不产生任何回答内容或引用。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex mt-6" style="justify-content:flex-end; gap:var(--space-2); border-top:1px solid var(--border-soft); padding-top:var(--space-4);">
+            <button class="btn">取消</button>
+            <button class="btn btn-primary">保存配置</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

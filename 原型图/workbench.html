@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* 页面级样式 */
+.space-card { display: flex; flex-direction: column; gap: var(--space-2); }
+.space-card .sc-head { display: flex; align-items: center; gap: var(--space-3); }
+.space-card .sc-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-md); flex: none;
+  display: grid; place-items: center; font-weight: 700; font-size: 15px;
+}
+.sc-blue  { background: var(--surface-warm); color: var(--accent); }
+.sc-green { background: color-mix(in srgb, var(--success) 12%, var(--surface)); color: var(--success); }
+.sc-amber { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); color: #b45309; }
+.space-card h3 { font-size: var(--text-base); font-weight: 700; }
+.space-card .sc-stats { display: flex; gap: var(--space-5); font-size: var(--text-xs); color: var(--muted); margin-top: 2px; }
+.space-card .sc-stats b { display: block; font-size: var(--text-lg); color: var(--fg); font-variant-numeric: tabular-nums; }
+.search-zone { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+.search-zone .scope-select { width: 180px; flex: none; }
+.result-state { margin-top: var(--space-4); }
+.result-item { padding: var(--space-4) 0; border-bottom: 1px solid var(--border-soft); }
+.result-item:last-child { border-bottom: none; }
+.result-item .r-title { font-weight: 600; }
+.result-item .r-snip { font-size: var(--text-sm); color: var(--fg-2); margin-top: 4px; }
+.result-item mark { background: color-mix(in srgb, var(--accent) 18%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.result-item .r-meta { display: flex; gap: var(--space-3); margin-top: 6px; font-size: var(--text-xs); color: var(--muted); align-items: center; }
+.quick-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+.qa-tile {
+  display: flex; align-items: center; gap: 12px; text-decoration: none;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: var(--space-4); color: var(--fg); background: var(--surface);
+  transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+.qa-tile:hover { border-color: var(--accent); box-shadow: var(--elev-ring); text-decoration: none; }
+.qa-tile .t-icon {
+  width: 36px; height: 36px; border-radius: var(--radius-sm); flex: none;
+  background: var(--surface-warm); color: var(--accent); display: grid; place-items: center; font-weight: 700;
+}
+.qa-tile b { font-size: var(--text-sm); display: block; }
+.qa-tile span { font-size: var(--text-xs); color: var(--muted); }
+.session-item { display: flex; align-items: flex-start; gap: 10px; padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.session-item:last-child { border-bottom: none; }
+.session-item .s-q { font-size: var(--text-sm); color: var(--fg-2); }
+.session-item .s-time { font-size: var(--text-xs); color: var(--muted); margin-left: auto; flex: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧栏 -->
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html" aria-current="page">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot">
+      <div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <!-- 顶栏 -->
+    <header class="topbar" data-od-id="topbar">
+      <h1>工作台</h1>
+      <form class="topbar-search" id="top-search">⌕ <input type="search" aria-label="快捷搜索" placeholder="在所选空间内搜索文档名称及正文…"></form>
+    </header>
+
+    <main class="content">
+      <!-- KPI -->
+      <section class="grid-kpi" data-od-id="workbench-kpi" aria-label="概览指标">
+        <div class="card kpi"><span class="label">已发布空间</span><span class="value" id="published-count">5</span><span class="delta">当前演示范围</span></div>
+        <div class="card kpi"><span class="label">文档总数 / 可检索</span><span class="value"><span id="selected-documents">48</span> <span class="text-sm muted" id="selected-searchable">/ 47</span></span><span class="delta" id="selected-space-label">当前空间：差旅报销制度</span></div>
+        <div class="card kpi"><span class="label">待审核申请</span><span class="value" id="pending-count">2</span><span class="delta">已提交的审核申请</span></div>
+        <div class="card kpi"><span class="label">今日提问次数</span><span class="value">87</span><span class="delta up">失败请求 2 次</span></div>
+      </section>
+
+      <!-- 空间入口 -->
+      <section class="mb-4" data-od-id="space-entries" aria-label="知识空间入口">
+        <div class="page-head" style="margin-bottom:16px;">
+          <div><h2 style="font-size:var(--text-lg);font-weight:700;">知识空间</h2>
+          <p class="sub">文档数、可检索文档数按空间统计 · 数据范围为当前登录用户有权限的空间</p></div>
+          <div class="actions">
+            <a class="btn btn-sm" href="knowledge.html#new">＋ 创建空间</a>
+            <a class="btn btn-sm" href="import.html">⇪ 导入文档</a>
+          </div>
+        </div>
+        <div class="grid-cards">
+          <a class="card space-card" href="?space=employee#space-search" data-space="employee" data-documents="62" data-searchable="61" data-group="hr" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-blue">员</span><span><h3>员工手册</h3><span class="text-xs muted">hr · 已发布</span></span></div>
+            <div class="sc-stats"><span><b>62</b>文档数</span><span><b>61</b>可检索</span></div>
+          </a>
+          <a class="card space-card" href="?space=travel#space-search" data-space="travel" data-documents="48" data-searchable="47" data-group="finance" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-blue">差</span><span><h3>差旅报销制度</h3><span class="text-xs muted">finance · 已发布</span></span></div>
+            <div class="sc-stats"><span><b>48</b>文档数</span><span><b>47</b>可检索</span></div>
+          </a>
+          <a class="card space-card" href="?space=safety#space-search" data-space="safety" data-documents="35" data-searchable="35" data-group="ops" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-green">安</span><span><h3>安全生产规范</h3><span class="text-xs muted">ops · 已发布</span></span></div>
+            <div class="sc-stats"><span><b>35</b>文档数</span><span><b>35</b>可检索</span></div>
+          </a>
+          <a class="card space-card" href="?space=legal#space-search" data-space="legal" data-documents="24" data-searchable="24" data-group="legal" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-amber">合</span><span><h3>合规与风控政策</h3><span class="text-xs muted">legal · 审核中</span></span></div>
+            <div class="sc-stats"><span><b>24</b>文档数</span><span><b>0</b>对用户暂不可见</span></div>
+          </a>
+          <a class="card space-card" href="?space=contract#space-search" data-space="contract" data-documents="89" data-searchable="88" data-group="legal" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-blue">外</span><span><h3>对外合作协议模板</h3><span class="text-xs muted">legal · 已发布</span></span></div>
+            <div class="sc-stats"><span><b>89</b>文档数</span><span><b>88</b>可检索</span></div>
+          </a>
+          <a class="card space-card" href="?space=product#space-search" data-space="product" data-documents="90" data-searchable="90" data-group="pmo" style="text-decoration:none;">
+            <div class="sc-head"><span class="sc-icon sc-green">产</span><span><h3>产品发布流程</h3><span class="text-xs muted">pmo · 已发布</span></span></div>
+            <div class="sc-stats"><span><b>90</b>文档数</span><span><b>90</b>可检索</span></div>
+          </a>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <!-- 搜索三态演示 -->
+        <section class="card" data-od-id="space-search" aria-label="空间内搜索">
+          <div class="card-head"><h3>空间内搜索</h3><span class="hint">搜索对象为所选空间内的文档，支持名称及正文；不把空间名称当正文结果</span></div>
+          <form class="search-zone" id="space-search" role="search" aria-label="空间内搜索">
+            <select class="scope-select" id="search-scope" aria-label="搜索空间范围"></select>
+            <input id="search-keyword" type="search" value="报销时限" aria-label="搜索关键词" style="flex:1;">
+            <button class="btn btn-primary" type="submit">搜索</button>
+          </form>
+          <div class="result-state" id="search-results" aria-live="polite"></div>
+          <details class="mt-4" data-od-id="search-other-states">
+            <summary class="text-sm" style="cursor:pointer;color:var(--fg-2);font-weight:600;">其他搜索状态的口径示例</summary>
+            <div class="notice notice-warn mt-4"><span class="n-icon">⚠</span><span><strong>处理未完成</strong>：部分文档仍在解析，已检索部分的结果可能不完整。</span></div>
+            <div class="notice notice-info mt-4"><span class="n-icon">ℹ</span><span><strong>无匹配</strong>：所选空间处理已完成，没有名称或正文匹配。</span></div>
+            <div class="notice notice-fail mt-4"><span class="n-icon">⛔</span><span><strong>空间不可访问</strong>：请切换至已发布且有权限的空间。</span></div>
+          </details>
+        </section>
+
+        <!-- 右列：快捷操作 + 最近会话 -->
+        <div>
+          <section class="card mb-4" data-od-id="quick-actions" aria-label="快捷操作">
+            <div class="card-head"><h3>快捷操作</h3></div>
+            <div class="quick-actions">
+              <a class="qa-tile" href="assistant.html"><span class="t-icon">◉</span><span><b>AI 助手</b><span>基于已发布资料提问</span></span></a>
+              <a class="qa-tile" href="import.html"><span class="t-icon">⇪</span><span><b>导入文档</b><span>批量导入逐文件反馈</span></span></a>
+            </div>
+          </section>
+          <section class="card" data-od-id="recent-sessions" aria-label="最近会话">
+            <div class="card-head"><h3>最近会话</h3><a class="more" href="assistant.html">全部 ›</a></div>
+            <div class="session-item"><span class="dot" style="color:var(--success);"></span><span class="s-q">差旅报销的时限是多少？如何核对发票要求？</span><span class="s-time">10 分钟前</span></div>
+            <div class="session-item"><span class="dot" style="color:var(--warn);"></span><span class="s-q">2024 版报销办法和现行版有什么冲突？</span><span class="s-time">2 小时前</span></div>
+            <div class="session-item"><span class="dot" style="color:var(--success);"></span><span class="s-q">产品发布前需要哪些安全评审材料？</span><span class="s-time">昨天</span></div>
+            <div class="session-item"><span class="dot" style="color:var(--success);"></span><span class="s-q">试用期考核标准在哪个文件里？</span><span class="s-time">昨天</span></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="prototype-release.js"></script>
+<script src="prototype-documents.js"></script>
+<script src="prototype-workbench.js"></script>
+</body>
+</html>

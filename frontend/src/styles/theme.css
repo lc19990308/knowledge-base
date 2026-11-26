@@ -1,0 +1,248 @@
+/*
+ * 设计 token 单一入口：亮色（:root）与暗色（[data-theme='dark']）两套取值。
+ *
+ * 三条硬规则：
+ * 1. 组件只引用语义 token（--color-*、--space-*、--text-* …），不写裸色值；
+ * 2. 新增颜色 token 必须同时给出亮色与暗色两个值，缺一个就等于「永远亮着的一块区域」；
+ * 3. 颜色值统一用 6 位 hex —— design.ts 的 withAlpha() 只认 6 位 hex，其余格式会静默返回原值。
+ * 取值依据与对比度验算见 docs/ai-qa-design-tokens.md。
+ */
+:root {
+  color-scheme: light;
+
+  /* ─────────────── 颜色 · 亮色 ─────────────── */
+  /* 底色与表面：canvas 页底 < surface 卡片/菜单 < surface-raised 浮层（弹窗、抽屉） */
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  /* 浮层与卡片同值，亮色靠 --elev-raised 阴影与遮罩拉开层级；暗色必须更亮一档。 */
+  --color-surface-raised: #ffffff;
+  --color-surface-selected: #eef4ff;
+
+  /* 文字：正文 / 次要 / 弱化，三档在 canvas、surface、selected 上均 ≥4.5:1 */
+  --color-text: #172033;
+  --color-text-secondary: #3b4658;
+  --color-text-muted: #5f6b7d;
+
+  /* 描边：border 为容器与控件描边，divider 为分隔线与弱底 */
+  --color-border: #d8dee8;
+  --color-divider: #edf1f6;
+
+  /*
+   * 主操作：同一个蓝同时承担「实心按钮底」「链接文字」「图标」三种角色，
+   * 因此取值必须同时满足「反白字 ≥4.5:1」与「对页底 ≥3:1」。
+   * hover / active 写成显式值，不用 color-mix 派生：派生方向在暗色下是反的（见暗色块）。
+   */
+  --color-action: #2563eb;
+  --color-action-text: #ffffff;
+  --color-action-hover: #2058d2;
+  --color-action-active: #1c50c0;
+
+  /* 状态色 · 填充：只用于圆点、图标、进度、图表柱线，不铺大面积背景 */
+  --color-success: #16a34a;
+  --color-warning: #f59e0b;
+  --color-danger: #dc2626;
+
+  /*
+   * 只读操作：查看、预览、下载这类不改数据的动作，用浅蓝把自己和实心蓝的主操作
+   * 区分开；文字取深一档的蓝，保证压在浅蓝底上 ≥4.5:1。
+   */
+  --color-surface-info: #eef2ff;
+  --color-text-info: #1d4ed8;
+
+  /* 状态色 · 文字、描边与浅底：文字压在自己浅底上 ≥4.5:1 */
+  --color-text-success: #166534;
+  --color-text-warning: #92400e;
+  --color-text-danger: #991b1b;
+  /* 警告描边单独一档：#f59e0b 作 1px 线只有 2.15:1，不满足控件边界 3:1。 */
+  --color-warning-border: #c27803;
+  --color-surface-success: #e3f4e9;
+  --color-surface-warning: #fef1dd;
+  --color-surface-danger: #fce9e9;
+  /* 铺在实心色块上的文字（步骤序号、状态圆点内的数字）。 */
+  --color-text-inverse: #ffffff;
+
+  /* 遮罩：弹窗、抽屉背后的压暗层 */
+  --color-mask: rgb(23 32 51 / 35%);
+
+  /* ═══════════ 以下不随主题变化，暗色块只覆盖 --elev-raised ═══════════ */
+
+  /*
+   * 字体栈：中文界面优先 PingFang SC / 微软雅黑，英文数字回落 Inter。
+   * Inter 不放在中文前：中文字符命中不了它，反而让字体回退多绕一层。
+   */
+  --font-body:
+    Inter, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui,
+    sans-serif;
+  --font-display:
+    Inter, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui,
+    sans-serif;
+  --font-mono:
+    'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Monaco, Consolas,
+    monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+  --text-3xl: 42px;
+  --text-title: var(--text-2xl);
+  --leading-body: 1.5;
+  --leading-tight: 1.12;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-control: var(--radius-sm);
+  --radius-panel: var(--radius-md);
+  --radius-pill: 9999px;
+  /* --elev-ring 与 --shadow-focus 内部引用 --color-border / --color-action，
+     取值在使用处解析，切主题自动跟随，无需在暗色块重复声明。 */
+  --elev-ring: 0 0 0 1px var(--color-border);
+  --elev-raised: 0 16px 40px rgb(23 32 51 / 10%);
+  --shadow-focus: 0 0 0 4px
+    color-mix(in srgb, var(--color-action) 22%, transparent);
+  --transition-fast: 140ms;
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --tracking-display: -0.015em;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /* 侧栏两态宽度：收起态取 64px，正好让 16px 导航图标与 32px 头像居中
+     在侧栏中线上（侧栏内边距 12px + 链接内边距 12px = 图标起点 24px）。 */
+  --sidebar-width: 236px;
+  --sidebar-width-collapsed: 64px;
+  --control-height: 2.375rem;
+
+  /*
+   * 阴影分级：卡片默认不投影（靠描边分层），悬浮 / 弹层才用 raised；
+   * pop 是弹窗与下拉的第二档，比 raised 更聚拢，避免所有浮层一个深浅。
+   */
+  --elev-card: 0 1px 2px rgb(23 32 51 / 4%), 0 1px 1px rgb(23 32 51 / 2%);
+  --elev-pop: 0 8px 24px rgb(23 32 51 / 12%), 0 2px 6px rgb(23 32 51 / 6%);
+
+  /* 主按钮微渐变：只差 2% 亮度，亮色下几乎不可见，暗色下稍提顶部。 */
+  --action-gradient: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-action), white 6%) 0%,
+    var(--color-action) 100%
+  );
+
+  /*
+   * 公共表格：默认高度按「表头 + 10 条两行文案的数据行」计算（实测表头 39px、数据行 66px），
+   * 保证默认每页 10 条时无需表内滚动；行数再多改为表内滚动，页面骨架不变。
+   * 卡片内嵌的统计、抽屉、弹窗表格改用 --table-compact-height，避免把页面拉长。
+   */
+  --table-visible-rows: 10;
+  --table-header-height: 39px;
+  --table-row-height: 66px;
+  --table-height: calc(
+    var(--table-header-height) + var(--table-visible-rows) *
+      var(--table-row-height) + 2px
+  );
+  --table-compact-height: 360px;
+  --table-empty-padding-block: var(--space-12);
+
+  --button-small-height: 30px;
+  --button-small-padding-inline: var(--space-3);
+  --button-small-text-size: var(--text-xs);
+  --dialog-title-size: var(--text-lg);
+  --dialog-title-line-height: var(--leading-tight);
+
+  /* 公共表单。触发器与选项正文共享字号，说明文字使用辅助字号。 */
+  --form-text-size: var(--text-sm);
+  --form-detail-size: var(--text-xs);
+  --form-line-height: var(--leading-body);
+  --form-label-weight: 600;
+  --form-padding-block: var(--space-2);
+  --form-padding-inline: var(--space-3);
+  --form-disabled-opacity: 0.65;
+  --form-textarea-height: 88px;
+  --form-textarea-compact-height: 46px;
+  --form-menu-padding: var(--space-1);
+  --form-menu-gap: var(--space-2);
+  --form-menu-detail-gap: 2px;
+  --form-switch-width: 36px;
+  --form-switch-height: 20px;
+  --form-switch-inset: 2px;
+}
+
+/*
+ * 暗色主题：与亮色同名、同角色、不同取值。
+ * 结构层级同向（卡片比页底亮、浮层比卡片亮、外壳比页底暗），
+ * 但交互态方向相反 —— 亮色越按越深，暗色越按越亮，都是「朝远离底气色的方向走」。
+ * 本块必须覆盖上面所有随主题变化的 token，漏写会静默回落到亮色值。
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-canvas: #0e1116;
+  --color-surface: #151a21;
+  /* 浮层比卡片亮一档：暗色下阴影几乎不可见，层级只能靠明度差 + 描边表达。 */
+  --color-surface-raised: #1c222b;
+  --color-surface-selected: #1a2b45;
+
+  /* 正文不用纯白（#fff 在暗底上会出光晕），15:1 已经远超 AA。 */
+  --color-text: #e8edf4;
+  --color-text-secondary: #b3bdcb;
+  --color-text-muted: #8d99a8;
+
+  --color-border: #2b333d;
+  --color-divider: #1f252d;
+
+  /*
+   * 暗色主色要比亮色更亮：#2563eb 压在本主题的深底上只有 3.6:1，按钮会发闷。
+   * 提亮后白字不再达标（3.7:1），因此按钮文字同步换成深墨色，两种主题各自满足 4.5:1。
+   */
+  --color-action: #3b82f6;
+  --color-action-text: #0a1220;
+  --color-action-hover: #5292f8;
+  --color-action-active: #6aa3fa;
+
+  /* 状态填充在暗底上去饱和一档，否则高饱和色刺眼。 */
+  --color-success: #2fbd6c;
+  --color-warning: #eeb02c;
+  --color-danger: #f0545a;
+
+  /* 暗色浅蓝底比亮色深两档，文字同步提亮，避免在深底上发灰。 */
+  --color-surface-info: #1b2a45;
+  --color-text-info: #8bb6ff;
+
+  --color-text-success: #4ccf8b;
+  --color-text-warning: #f2c46a;
+  --color-text-danger: #ff8b8f;
+  /* 暗色下描边比填充略低一档，避免 1px 亮线在深底上发颤。 */
+  --color-warning-border: #d99b24;
+  /* 状态浅底按 18–20% 混入：比例和亮色一致时在深底上等于没上色。 */
+  --color-surface-success: #1a3b30;
+  --color-surface-warning: #403823;
+  --color-surface-danger: #3c242b;
+  /* 深底上的反色文字取页面底色，而不是纯黑。 */
+  --color-text-inverse: #0e1116;
+
+  /* 黑压黑需要更大不透明度才能把背景推开。 */
+  --color-mask: rgb(0 0 0 / 65%);
+
+  --elev-raised: 0 16px 40px rgb(0 0 0 / 55%);
+  --elev-card: 0 1px 2px rgb(0 0 0 / 24%), 0 1px 1px rgb(0 0 0 / 12%);
+  --elev-pop: 0 8px 24px rgb(0 0 0 / 42%), 0 2px 6px rgb(0 0 0 / 20%);
+
+  /* 暗色主按钮渐变方向反转：顶部微亮，模拟自上而下的环境光。 */
+  --action-gradient: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-action), white 10%) 0%,
+    var(--color-action) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+  }
+}

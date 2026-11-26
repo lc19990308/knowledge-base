@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统设置 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.member-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.member-row:last-child { border-bottom: none; }
+.member-row .m-info { flex: 1; min-width: 0; }
+.member-row .m-info b { font-size: var(--text-sm); }
+.member-row .m-info span { display: block; font-size: var(--text-xs); color: var(--muted); }
+.member-row select { width: 150px; flex: none; }
+.perm-matrix td { font-size: var(--text-xs); }
+.perm-yes { color: var(--success); font-weight: 700; }
+.perm-no { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html" aria-current="page">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>系统设置</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content" style="max-width:960px;">
+      <div class="page-head" data-od-id="set-head">
+        <div><h2>系统设置</h2><p class="sub">权限管理与全局模型配置 · 仅系统管理员可访问</p></div>
+      </div>
+
+      <section class="card mb-4" data-od-id="global-model" aria-label="全局模型配置">
+        <div class="card-head"><h3>全局模型配置</h3><span class="hint">助手模型从全局配置继承</span></div>
+        <div class="grid-2" style="align-items:start;">
+          <div>
+            <div class="field">
+              <label>默认模型</label>
+              <select><option selected>GLM-5.3</option><option>GLM-5.3-Flash</option></select>
+              <span class="help">新助手默认继承；助手级仅可在开放范围内选择</span>
+            </div>
+            <div class="field">
+              <label>上下文引用上限（每次提问）</label>
+              <input type="text" value="10">
+            </div>
+          </div>
+          <div>
+            <div class="field">
+              <label>用量上报</label>
+              <div class="flex" style="justify-content:space-between;"><span class="text-sm">未上报时标记「未上报」，不记为零用量</span><label class="switch"><input type="checkbox" checked aria-label="启用用量上报"><span class="track"></span></label></div>
+            </div>
+            <div class="field">
+              <label>统计时区</label>
+              <input type="text" value="Asia/Shanghai（北京时间）" disabled>
+              <span class="help">固定北京时间；支持自然日、自然周、自然月</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card mb-4" data-od-id="member-roles" aria-label="成员与角色">
+        <div class="card-head"><h3>成员与角色</h3><button class="btn btn-sm btn-primary" style="margin-left:auto;">＋ 添加成员</button></div>
+        <div class="member-row"><span class="avatar" style="background:var(--surface-warm);color:var(--accent);">超</span><div class="m-info"><b>刘超</b><span>liuchao@company.com</span></div><select aria-label="刘超的角色"><option selected>系统管理员</option></select></div>
+        <div class="member-row"><span class="avatar">王</span><div class="m-info"><b>王敏</b><span>wangmin@company.com</span></div><select aria-label="王敏的角色"><option>普通用户</option><option selected>提交用户（差旅报销制度 · 可维护）</option></select></div>
+        <div class="member-row"><span class="avatar">李</span><div class="m-info"><b>李工</b><span>ligong@company.com</span></div><select aria-label="李工的角色"><option>普通用户</option><option selected>提交用户（安全生产规范 · 可维护）</option></select></div>
+        <div class="member-row"><span class="avatar">陈</span><div class="m-info"><b>陈晓</b><span>chenxiao@company.com</span></div><select aria-label="陈晓的角色"><option selected>普通用户</option></select></div>
+        <div class="notice notice-warn mt-4" style="font-size:var(--text-xs);">
+          <span class="n-icon">⚠</span>
+          <span>维护权限不等于发布权限：提交用户可维护空间、导入文档、提交审核，但发布 / 驳回 / 撤回仅系统管理员可执行。</span>
+        </div>
+      </section>
+
+      <section class="card" data-od-id="perm-matrix" aria-label="权限矩阵">
+        <div class="card-head"><h3>权限矩阵</h3><span class="hint">按角色 × 关键操作</span></div>
+        <div class="table-wrap" style="border:none;">
+          <table class="perm-matrix">
+            <thead><tr><th>操作</th><th>普通用户</th><th>提交用户（获维护权限）</th><th>系统管理员</th></tr></thead>
+            <tbody>
+              <tr><td class="row-title">搜索 / 问答已发布且有权限的空间</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">文档预览 / 下载（同一访问规则）</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">创建空间 / 导入文档（授权范围内）</td><td class="perm-no">—</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">提交发布审核 / 驳回后重提</td><td class="perm-no">—</td><td class="perm-yes">✓</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">审核发布 / 驳回 / 撤回发布</td><td class="perm-no">—</td><td class="perm-no">—</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">开放助手可绑定的空间</td><td class="perm-no">—</td><td class="perm-no">—</td><td class="perm-yes">✓</td></tr>
+              <tr><td class="row-title">回答模板 / 全局模型配置</td><td class="perm-no">—</td><td class="perm-no">—</td><td class="perm-yes">✓</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</body>
+</html>

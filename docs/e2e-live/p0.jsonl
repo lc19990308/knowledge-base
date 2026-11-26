@@ -1,0 +1,16 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-maint","roles":["USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-reader","roles":["USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-other","roles":["USER"]}
+{"step":"普通用户管理页/API 禁止","status":403}
+{"step":"浏览器上传、逐文件解析、加入草稿及提审","space":"ed4bc4e9-c510-409a-ac8c-7873f70379c4","batch":"cf3beea1-97d5-4ca8-b2a3-0d4eb0a6d9df","request":"59c34f4e-6c86-4dd4-ad0a-d910c27c7c58","preSearch":404,"files":[{"name":"FIN-TR-017_差旅报销办法_v2.1.md","id":"9d493bce-620c-4e39-a9d6-e6295b4a0366","status":"READY"},{"name":"FIN-TR-022_差旅住宿标准_v1.2.md","id":"c94084aa-a42f-40cd-8ad8-106202b78144","status":"READY"}]}
+{"step":"浏览器审核与发布生效","request":"59c34f4e-6c86-4dd4-ad0a-d910c27c7c58","snapshot":"15823b22-53a9-4841-bb63-f6a63a1b7669","status":"PUBLISHED"}
+{"step":"浏览器上传、逐文件解析、加入草稿及提审","space":"d8ce5ce0-4ddf-4dd3-9a9f-0ba78e03ff97","batch":"132a5e53-983e-48c0-9b30-a717b371b26b","request":"fa6040de-d08a-4103-8690-bfe44fad0ee9","preSearch":404,"files":[{"name":"FIN-SP-006_海外驻点例外_v1.0.md","id":"3166a671-a63a-42ca-882c-de894f5ec65f","status":"READY"}]}
+{"step":"浏览器审核与发布生效","request":"fa6040de-d08a-4103-8690-bfe44fad0ee9","snapshot":"43b2a152-d15c-4e10-95aa-bf829087822e","status":"PUBLISHED"}
+{"step":"工作台搜索和文档预览","document":"9d493bce-620c-4e39-a9d6-e6295b4a0366"}
+{"step":"问答会话","id":"8a037252-0a9e-4df9-9eaf-06302108c940"}
+{"step":"浏览器问答、引用打开和原件下载","question":"2d132fb7-25d2-4182-b060-6d93c36ae0f3","citation":"82fd56d5-967d-4376-b86d-7177fa319d6d","document":"9d493bce-620c-4e39-a9d6-e6295b4a0366","sha256":"130f14c2daa40b935c6c2ebce0617a336765bd0aed112b656913727b44391072"}
+{"step":"限制空间和无依据","allowed":"b0831d3f-670b-4118-8ad2-c08711902807","denied":"7a7dbbaf-af03-428b-9763-8f0ce91bf0dc","empty":"4b920920-a1ca-4981-af27-a7aca3b6ce40"}
+{"step":"撤权屏蔽历史段落和原件","question":"b0831d3f-670b-4118-8ad2-c08711902807","status":404}
+{"step":"浏览器撤回与旧回答屏蔽","question":"2d132fb7-25d2-4182-b060-6d93c36ae0f3","status":404}
+{"step":"浏览器登出并验证会话失效","logout":204,"me":401}

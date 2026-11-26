@@ -1,0 +1,12 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-reader","roles":["USER"]}
+{"step":"模板","templateId":"6df019c1-f2e1-48ff-9fd7-04385e2cf5e3"}
+{"step":"通过","id":"模板创建"}
+{"step":"失败","id":"助手绑定","error":"Error: locator.click: Error: strict mode violation: getByRole('switch', { name: '绑定 E2E 现行与归档-e2e-eb19be79' }) resolved to 2 elements:\n    1) <input role=\"switch\" type=\"checkbox\" aria-label=\"绑定 E2E 现行与归档-e2e-eb19be79\"/> aka getByRole('switch', { name: '绑定 E2E 现行与归档-e2e-eb19be79' }).first()\n    2) <input role=\"switch\" type=\"checkbox\" aria-label=\"绑定 E2E 现行与归档-e2e-eb19be79\"/> aka getByRole('switch', { name: '绑定 E2E 现行与归档-e2e-eb19be79' }).nth(1)\n\nCall log:\n  - waiting for getByRole('switch', { name: '绑定 E2E 现行与归档-e2e-eb19be79' })\n"}
+{"step":"模型配置","id":"146fd708-0212-4890-8728-5ad6300f5dda","alias":"E2E模型-e2e-eb19be79"}
+{"step":"通过","id":"新增停用模型"}
+{"step":"界面账号","id":"6ea8b1a9-7c25-47f7-b038-4769457f5148"}
+{"step":"通过","id":"界面建普通账号"}
+{"step":"失败","id":"统计明细、趋势与汇总","error":"TypeError: Cannot read properties of undefined (reading 'reduce')"}
+{"step":"会话生命周期","id":"442bae1a-47d1-4107-8de0-5aed97b9558b"}
+{"step":"通过","id":"会话归档、恢复、删除"}

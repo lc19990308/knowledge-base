@@ -1,0 +1,9 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-maint","roles":["USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-reader","roles":["USER"]}
+{"step":"解析","id":"1c60e4cd-a402-46e6-92af-5235accbea60","batch":"ab375a7a-1803-448c-8984-e0e6c440f273","files":[{"name":"FIN-FMT-101_境内差旅行前指引_v1.0.pdf","status":"READY","id":"4eef6395-de43-4674-a94d-66edb11570bb"},{"name":"FIN-FMT-102_差旅例外审批清单_v1.0.docx","status":"READY","id":"284ac7fd-3c74-4915-a3ce-3fee1af99583"},{"name":"FIN-FMT-103_住宿预算台账_v1.0.xlsx","status":"READY","id":"093a13e9-702a-4f31-af60-adbad67abf07"},{"name":"FIN-FMT-104_差旅预订与变更培训_v1.0.pptx","status":"READY","id":"c7e63505-5407-4d1e-9fcb-310bb9ad4642"},{"name":"FIN-FMT-105_差旅结算提醒_v1.0.txt","status":"READY","id":"8ea58137-3e10-41fe-a679-302d4eb964f7"},{"name":"FIN-FMT-106_差旅凭证交接单扫描_v1.0.pdf","status":"NO_TEXT","code":"NO_EXTRACTABLE_TEXT","id":"1f98d2aa-bd96-4aec-a827-da70d2cdf73f"},{"name":"FIN-FMT-107_差旅附件格式错误_v1.0.pdf","status":"REJECTED","code":"SUSPICIOUS_FILE"}]}
+{"step":"发布","id":"1c60e4cd-a402-46e6-92af-5235accbea60","name":"E2E 格式审核-e2e-eb19be79","request":"7fefc2af-1ceb-4752-9c81-782256ae33dd","snapshot":"d7efac39-4660-4b89-b762-2ba1d19ee5c4"}
+{"step":"重复导入","status":"SKIPPED_DUPLICATE"}
+{"step":"通过","id":"P1-01 混合文件、驳回重提、重复导入"}
+{"step":"解析","id":"0f989024-88d1-4938-b7e3-040a7cc47877","batch":"1a53da0c-cbe9-4c39-9cd5-4654ca667d49","files":[{"name":"FIN-TR-017_差旅报销办法_v2.1.md","status":"READY","id":"38875d58-719f-47d5-a032-5cf009b293c0"},{"name":"FIN-TR-017_差旅报销办法_v1.4.md","status":"READY","id":"b0e310cd-9fec-445c-be8c-1ce5294aac1a"},{"name":"FIN-TR-022_差旅住宿标准_v1.2.md","status":"READY","id":"b2b72a8a-8d0e-413f-8801-2ef95a0a7d29"}]}
+{"step":"失败","id":"P1-02 政策样本准备","error":"AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n409 !== 412\n"}

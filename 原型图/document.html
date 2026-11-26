@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文档预览 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html" aria-current="page">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理</a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+  </aside>
+  <div class="main">
+    <header class="topbar" data-od-id="topbar"><h1>文档预览</h1></header>
+    <main class="content">
+      <div class="page-head">
+        <div><h2 id="document-title">文档预览</h2><p class="sub" id="document-subtitle"></p></div>
+        <div class="actions"><a class="btn" href="workbench.html">返回工作台</a><a class="btn" href="assistant.html">返回助手</a></div>
+      </div>
+      <section class="card" aria-live="polite">
+        <div class="card-head"><h3 id="document-section-title">文档内容</h3><span id="document-state" class="badge" hidden></span></div>
+        <p id="document-content" class="text-sm"></p>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="prototype-release.js"></script>
+<script src="prototype-documents.js"></script>
+<script>
+(() => {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  const entry = window.prototypeDocuments.find((doc) => doc.id === params.get('doc'));
+  const title = document.getElementById('document-title');
+  const subtitle = document.getElementById('document-subtitle');
+  const state = document.getElementById('document-state');
+  const content = document.getElementById('document-content');
+  const sectionTitle = document.getElementById('document-section-title');
+
+  function render() {
+    const revokedHistory = entry && params.has('history') && window.prototypeRelease?.wasWithdrawn?.(entry.space);
+    if (!window.isPrototypeDocumentAvailable(entry) || revokedHistory) {
+      title.textContent = '文档不可访问';
+      subtitle.textContent = '';
+      sectionTitle.textContent = '来源不可用';
+      state.hidden = true;
+      state.style.display = 'none';
+      state.textContent = '';
+      content.textContent = '该文档不存在、来源已撤回，或你没有访问权限。';
+      return;
+    }
+    const status = window.prototypeDocumentStatus(entry);
+    title.textContent = entry.title;
+    subtitle.textContent = `${window.prototypeSpaceNames[entry.space]} · 演示文档 · ${entry.date}`;
+    sectionTitle.textContent = '正文摘录';
+    state.className = `badge badge-${status.tone}`;
+    state.textContent = status.label;
+    state.hidden = false;
+    state.style.display = '';
+    content.textContent = entry.body || '此扫描件没有可提取正文。';
+  }
+
+  window.addEventListener('prototype-release-change', render);
+  window.addEventListener('pageshow', render);
+  render();
+})();
+</script>
+</body>
+</html>

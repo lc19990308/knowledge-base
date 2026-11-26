@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>问答统计 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* 简单面积图 */
+.line-chart { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: var(--space-4); font-size: var(--text-xs); color: var(--muted); margin-bottom: var(--space-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html" aria-current="page">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>问答统计</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content">
+      <div class="page-head flex-wrap" data-od-id="stats-head">
+        <div><h2>问答统计</h2><p class="sub">统计时区为北京时间（Asia/Shanghai）· 自然日 / 自然周（周一至周日）/ 自然月，不使用滚动窗口 · 用量按发起操作的用户归属</p></div>
+        <div class="actions">
+          <select id="period-type" style="width:120px;" aria-label="周期类型"><option value="day">自然日</option><option value="week" selected>自然周</option><option value="month">自然月</option></select>
+          <select id="period-range" style="width:150px;" aria-label="周期范围"></select>
+        </div>
+      </div>
+
+      <div class="notice notice-info mb-4" data-od-id="stats-rule">
+        <span class="n-icon">ℹ</span>
+        <span><strong>演示数据 · 统计口径</strong>：周期内发起过提问的会话按用户去重。跨空间提问只计一次；最终失败同时计入提问和失败，网络重复提交和系统重试不另计，用户主动重问计作新请求。仅加总已上报的 Tokens。</span>
+      </div>
+
+      <section class="grid-kpi" data-od-id="stats-kpi" aria-label="统计指标" aria-live="polite">
+        <div class="card kpi"><span class="label">会话数</span><span class="value" id="session-count"></span><span class="delta">周期内按用户与会话去重</span></div>
+        <div class="card kpi"><span class="label">提问次数</span><span class="value" id="question-count"></span><span class="delta" id="duplicate-count"></span></div>
+        <div class="card kpi"><span class="label">失败请求数</span><span class="value" id="failure-count"></span><span class="delta" id="failure-rate"></span></div>
+        <div class="card kpi"><span class="label">Tokens 用量</span><span class="value" id="token-count"></span><span class="delta" id="unreported-count"></span></div>
+      </section>
+
+      <section class="card mb-4" data-od-id="trend-chart" aria-label="趋势图">
+        <div class="card-head flex-wrap">
+          <h3 id="trend-title">提问与失败趋势</h3>
+          <span class="hint" id="trend-range"></span>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--accent);"></i>提问次数</span>
+          <span><i style="background:var(--danger);"></i>失败请求数</span>
+        </div>
+        <svg id="trend" class="line-chart" viewBox="0 0 720 200" role="img"></svg>
+      </section>
+
+      <div class="grid-2">
+        <section class="card main" data-od-id="user-usage" aria-label="用户用量排行">
+          <div class="card-head flex-wrap"><h3>用户用量排行（按用户归属）</h3><span class="hint">未上报是提问的子集，不另计提问</span></div>
+          <div class="table-wrap" style="border:none;">
+            <table>
+              <thead><tr><th scope="col">用户</th><th scope="col" class="num">会话</th><th scope="col" class="num">提问</th><th scope="col" class="num">失败</th><th scope="col" class="num">已上报 Tokens</th><th scope="col" class="num">未上报请求</th></tr></thead>
+              <tbody id="usage-users"></tbody>
+              <tfoot id="usage-total"></tfoot>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" data-od-id="space-usage" aria-label="空间用量">
+          <div class="card-head flex-wrap"><h3>文档类指标（按空间统计）</h3><span class="hint">问答用量仍按用户归属</span></div>
+          <div class="table-wrap" style="border:none;">
+            <table>
+              <thead><tr><th scope="col">空间</th><th scope="col" class="num">被引用次数</th><th scope="col" class="num">覆盖提问</th></tr></thead>
+              <tbody id="usage-spaces"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <details class="card mt-4" data-od-id="stats-records">
+        <summary class="row-title" id="records-summary">演示请求明细</summary>
+        <div class="table-wrap mt-4" style="border:none;">
+          <table>
+            <thead><tr><th scope="col">北京时间</th><th scope="col">请求</th><th scope="col">用户 / 会话</th><th scope="col">计数口径</th><th scope="col">已上报 Tokens</th><th scope="col">文档引用来源</th></tr></thead>
+            <tbody id="usage-records"></tbody>
+          </table>
+        </div>
+      </details>
+    </main>
+  </div>
+</div>
+<script>
+(() => {
+  const users = { wang: '王敏', li: '李工', zhang: '张远', chen: '陈晓' };
+  const spaces = { travel: '差旅报销制度', hr: '员工手册', ops: '安全生产规范', legal: '对外合作协议模板' };
+  // 同一请求 ID 的重复提交、内部重试只保留受理主记录；主动重问使用新的 ID。
+  const records = [
+    ['2026-10-31T15:59:59Z', 'Q01', 'wang', 'S01', 'success', 320, ['travel']],
+    ['2026-10-31T16:00:00Z', 'Q02', 'wang', 'S01', 'success', 380, ['travel', 'hr']],
+    ['2026-11-08T02:00:00Z', 'Q03', 'chen', 'S02', 'success', 160, ['hr']],
+    ['2026-11-15T15:59:59Z', 'Q04', 'li', 'S03', 'success', 405, ['ops']],
+    ['2026-11-15T16:00:00Z', 'Q05', 'li', 'S03', 'success', 280, ['ops']],
+    ['2026-11-16T03:36:00Z', 'Q06', 'chen', 'S04', 'success', 189, ['hr']],
+    ['2026-11-17T02:30:00Z', 'Q07', 'zhang', 'S05', 'failed', 65, []],
+    ['2026-11-18T04:18:00Z', 'Q08', 'wang', 'S06', 'success', 650, ['travel', 'travel', 'hr']],
+    ['2026-11-19T15:59:59Z', 'Q09', 'wang', 'S06', 'success', 120, ['travel']],
+    ['2026-11-19T16:00:00Z', 'Q10', 'wang', 'S06', 'success', 812, ['travel', 'hr']],
+    ['2026-11-19T16:00:03Z', 'Q10', 'wang', 'S06', 'duplicate', null, []],
+    ['2026-11-20T01:11:00Z', 'Q11', 'li', 'S07', 'failed', null, []],
+    ['2026-11-20T01:11:05Z', 'Q11', 'li', 'S07', 'retry', null, []],
+    ['2026-11-20T04:13:00Z', 'Q12', 'li', 'S07', 'reask', 540, ['ops']],
+    ['2026-11-20T09:40:00Z', 'Q13', 'zhang', 'S08', 'success', null, ['legal']],
+    ['2026-11-21T03:05:00Z', 'Q14', 'chen', 'S04', 'success', 230, ['hr']],
+    ['2026-11-22T15:59:59Z', 'Q15', 'zhang', 'S08', 'success', 470, ['legal', 'travel']],
+    ['2026-11-22T16:00:00Z', 'Q16', 'chen', 'S09', 'success', 110, ['hr']],
+    ['2026-11-30T15:59:59Z', 'Q17', 'wang', 'S10', 'success', 350, ['travel']],
+    ['2026-11-30T16:00:00Z', 'Q18', 'li', 'S11', 'success', 440, ['ops']],
+  ].map(([timestamp, id, user, session, kind, tokens, citations]) => ({ timestamp, id, user, session, kind, tokens, citations }));
+  const kindLabels = { success: '成功 · 计入', failed: '最终失败 · 同计提问与失败', duplicate: '网络重复 · 不另计', retry: '内部重试 · 不另计', reask: '主动重问 · 计作新提问' };
+  const periodLabels = { day: '自然日', week: '自然周', month: '自然月' };
+  const demoDate = '2026-11-20';
+  const millisecondsPerDay = 86400000;
+  const beijingClock = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const byId = (id) => document.getElementById(id);
+  const setText = (id, text) => { byId(id).textContent = text; };
+  const typeControl = byId('period-type');
+  const rangeControl = byId('period-range');
+  const formatNumber = new Intl.NumberFormat('zh-CN').format;
+  const accepted = (record) => record.kind !== 'duplicate' && record.kind !== 'retry';
+  const beijingDay = (record) => record.localTime.slice(0, 10);
+  const calendarDate = (day) => new Date(`${day}T00:00:00Z`);
+  const dayKey = (date) => date.toISOString().slice(0, 10);
+  const addDays = (date, days) => new Date(date.getTime() + days * millisecondsPerDay);
+  const localizedRecords = records.map((record) => ({ ...record, localTime: beijingClock.format(new Date(record.timestamp)) }));
+
+  // 先转到北京时间，再用 UTC Date 对转换后的民用日期做日历运算，避免使用浏览器本地时区。
+  function periodBounds(day, type) {
+    const date = calendarDate(day);
+    if (type === 'week') {
+      const start = addDays(date, -((date.getUTCDay() + 6) % 7));
+      return { start, end: addDays(start, 7) };
+    }
+    if (type === 'month') {
+      const year = date.getUTCFullYear();
+      const month = date.getUTCMonth();
+      return { start: new Date(Date.UTC(year, month, 1)), end: new Date(Date.UTC(year, month + 1, 1)) };
+    }
+    return { start: date, end: addDays(date, 1) };
+  }
+
+  function summarize(requests) {
+    const sessions = new Set(requests.map(({ user, session }) => `${user}:${session}`));
+    return {
+      sessions: sessions.size,
+      questions: requests.length,
+      failures: requests.filter(({ kind }) => kind === 'failed').length,
+      tokens: requests.reduce((sum, { tokens }) => tokens === null ? sum : sum + tokens, 0),
+      unreported: requests.filter(({ tokens }) => tokens === null).length,
+    };
+  }
+
+  function tokenLabel({ questions, tokens, unreported }) {
+    return questions > 0 && unreported === questions ? '未上报' : formatNumber(tokens);
+  }
+
+  function tableRow(values, numericStart = values.length) {
+    const row = document.createElement('tr');
+    values.forEach((text, index) => {
+      const cell = row.insertCell();
+      if (index === 0) cell.className = 'row-title';
+      if (index >= numericStart) cell.className = 'num';
+      cell.textContent = text;
+    });
+    return row;
+  }
+
+  function emptyRow(message, columns) {
+    const row = tableRow([message]);
+    row.cells[0].colSpan = columns;
+    row.cells[0].className = 'muted';
+    return row;
+  }
+
+  function usageRow(name, totals) {
+    return tableRow([name, formatNumber(totals.sessions), formatNumber(totals.questions), formatNumber(totals.failures), tokenLabel(totals), formatNumber(totals.unreported)], 1);
+  }
+
+  function svgNode(tag, attributes, text) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function renderTrend(type, start, end, requests, totals) {
+    const chart = byId('trend');
+    const dayCount = (end - start) / millisecondsPerDay;
+    const daysOfWeek = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const hoursPerBucket = 4;
+    const bucketCount = type === 'day' ? 24 / hoursPerBucket : dayCount;
+    const buckets = Array.from({ length: bucketCount }, (_, index) => {
+      const day = dayKey(addDays(start, index));
+      const hour = String(index * hoursPerBucket).padStart(2, '0');
+      const group = requests.filter((record) => type === 'day'
+        ? Math.floor(Number(record.localTime.slice(11, 13)) / hoursPerBucket) === index
+        : beijingDay(record) === day);
+      const label = type === 'day' ? `${hour}:00` : type === 'week' ? daysOfWeek[index] : `${index + 1} 日`;
+      return { label, questions: group.length, failures: group.filter(({ kind }) => kind === 'failed').length };
+    });
+    const axisSegments = 4;
+    const step = Math.max(1, Math.ceil(Math.max(...buckets.map(({ questions }) => questions)) / axisSegments));
+    const x = (index) => 50 + index * 628 / (buckets.length - 1);
+    const y = (count) => 170 - count * 140 / (step * axisSegments);
+    const points = (key) => buckets.map((bucket, index) => `${x(index)},${y(bucket[key])}`);
+    const questionPoints = points('questions');
+    chart.replaceChildren();
+    chart.setAttribute('aria-label', `${periodLabels[type]}：提问 ${totals.questions} 次，失败 ${totals.failures} 次`);
+    for (let index = 0; index <= axisSegments; index += 1) {
+      const tick = index * step;
+      chart.append(svgNode('line', { class: 'chart-grid', x1: 40, x2: 700, y1: y(tick), y2: y(tick) }), svgNode('text', { class: 'chart-axis', x: 22, y: y(tick) + 4 }, tick));
+    }
+    chart.append(
+      svgNode('path', { class: 'chart-area', d: `M${questionPoints.join(' L')} L${x(buckets.length - 1)},170 L${x(0)},170 Z` }),
+      svgNode('polyline', { class: 'chart-line', points: questionPoints.join(' ') }),
+      svgNode('polyline', { points: points('failures').join(' '), fill: 'none', stroke: 'var(--danger)', 'stroke-width': 2, 'stroke-dasharray': '4 3', 'stroke-linecap': 'round' }),
+    );
+    buckets.forEach(({ label, questions, failures }, index) => {
+      if (type !== 'month' || index % 5 === 0 || (index === buckets.length - 1 && index % 5 > 2)) {
+        chart.append(svgNode('text', { class: 'chart-axis', x: x(index), y: 192, 'text-anchor': 'middle' }, label));
+      }
+      const dot = svgNode('circle', { cx: x(index), cy: y(questions), r: 3, fill: 'var(--accent)' });
+      dot.append(svgNode('title', {}, `${label}：提问 ${questions}，失败 ${failures}`));
+      chart.append(dot);
+    });
+  }
+
+  function render() {
+    const type = typeControl.value;
+    const { start, end } = periodBounds(rangeControl.value, type);
+    const first = dayKey(start);
+    const afterLast = dayKey(end);
+    const last = dayKey(addDays(end, -1));
+    const matching = localizedRecords.filter((record) => beijingDay(record) >= first && beijingDay(record) < afterLast);
+    const requests = [...new Map(matching.filter(accepted).map((record) => [record.id, record])).values()];
+    const totals = summarize(requests);
+
+    setText('session-count', formatNumber(totals.sessions));
+    setText('question-count', formatNumber(totals.questions));
+    setText('duplicate-count', `${matching.length - requests.length} 条重复或重试未另计`);
+    setText('failure-count', formatNumber(totals.failures));
+    setText('failure-rate', totals.questions ? `失败率 ${(totals.failures / totals.questions * 100).toFixed(1)}%` : '无受理请求');
+    setText('token-count', tokenLabel(totals));
+    setText('unreported-count', `${totals.unreported} 条请求未上报用量`);
+    setText('trend-title', `${periodLabels[type]}提问与失败趋势`);
+    setText('trend-range', `${first === last ? first : `${first} 至 ${last}`} · 北京时间${type === 'day' ? ' · 每 4 小时' : ' · 按日'}`);
+    renderTrend(type, start, end, requests, totals);
+
+    const userRows = Object.entries(users).map(([key, name]) => ({ name, totals: summarize(requests.filter(({ user }) => user === key)) }))
+      .filter(({ totals }) => totals.questions > 0)
+      .sort((left, right) => right.totals.questions - left.totals.questions)
+      .map(({ name, totals }) => usageRow(name, totals));
+    byId('usage-users').replaceChildren(...(userRows.length ? userRows : [emptyRow('本期没有问答用量', 6)]));
+    byId('usage-total').replaceChildren(usageRow('本期合计', totals));
+
+    byId('usage-spaces').replaceChildren(...Object.entries(spaces).map(([key, name]) => {
+      const citationCount = requests.flatMap(({ citations }) => citations).filter((space) => space === key).length;
+      const covered = requests.filter(({ citations }) => citations.includes(key)).length;
+      return tableRow([name, formatNumber(citationCount), formatNumber(covered)], 1);
+    }));
+    setText('records-summary', `演示请求明细（${matching.length} 条原始记录）`);
+    const recordRows = matching.map(({ localTime, id, user, session, kind, tokens, citations }) => tableRow([
+      localTime, id, `${users[user]} / ${session}`, kindLabels[kind],
+      kind === 'duplicate' || kind === 'retry' ? '不另计' : tokens === null ? '未上报' : formatNumber(tokens),
+      citations.map((space) => spaces[space]).join('、') || '—',
+    ]));
+    byId('usage-records').replaceChildren(...(recordRows.length ? recordRows : [emptyRow('本期没有请求记录', 6)]));
+  }
+
+  function updatePeriods() {
+    const type = typeControl.value;
+    const starts = new Set([...localizedRecords.map(beijingDay), demoDate].map((day) => dayKey(periodBounds(day, type).start)));
+    const options = [...starts].sort().reverse().map((day) => {
+      const { end } = periodBounds(day, type);
+      const last = dayKey(addDays(end, -1));
+      const label = type === 'month' ? day.slice(0, 7) : type === 'week' ? `${day.slice(5)} ～ ${last.slice(5)}` : day;
+      return new Option(label, day);
+    });
+    rangeControl.replaceChildren(...options);
+    rangeControl.value = dayKey(periodBounds(demoDate, type).start);
+    render();
+  }
+
+  typeControl.addEventListener('change', updatePeriods);
+  rangeControl.addEventListener('change', render);
+  updatePeriods();
+})();
+</script>
+</body>
+</html>

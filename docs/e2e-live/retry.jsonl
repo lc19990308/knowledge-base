@@ -1,0 +1,5 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-maint","roles":["USER"]}
+{"step":"截断文件","space":"87492d86-cf5a-4f1e-9d97-dcaa78d15496","batch":"78d16a7f-d9ae-4000-b17a-f6ffceb3f44d","status":"FAILED","code":"PROCESSING_FAILED","document":"a03242e2-3bef-4a5e-92e4-6d893bcdbde3"}
+{"step":"浏览器重试受理","document":"a03242e2-3bef-4a5e-92e4-6d893bcdbde3","status":"QUEUED"}
+{"step":"重试后正确报告原件仍不可解析","status":"FAILED","code":"PROCESSING_FAILED"}

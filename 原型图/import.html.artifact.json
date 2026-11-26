@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "import.html",
+  "entry": "import.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-11-20T09:14:43.678Z",
+  "updatedAt": "2026-11-20T09:14:43.678Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

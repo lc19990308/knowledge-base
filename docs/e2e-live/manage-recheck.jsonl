@@ -1,0 +1,5 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-reader","roles":["USER"]}
+{"step":"失败","id":"助手绑定","error":"TimeoutError: locator.click: Timeout 8000ms exceeded.\nCall log:\n  - waiting for getByRole('option', { name: '助手级：E2E模板-e2e-eb19be79（优先于全局）' })\n    - locator resolved to <button type=\"button\" role=\"option\" tabindex=\"-1\" data-v-c90c6f63=\"\" class=\"select-option\" aria-selected=\"false\">…</button>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n  - element was detached from the DOM, retrying\n"}
+{"step":"统计","date":"2026-11-23","count":7,"qid":"af7de1ec-01b3-48d6-acfd-db9cfe66123b"}
+{"step":"通过","id":"统计明细、趋势与汇总"}

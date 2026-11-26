@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "answer-templates.html",
+  "entry": "answer-templates.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-11-20T09:17:08.629Z",
+  "updatedAt": "2026-11-20T09:17:08.629Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

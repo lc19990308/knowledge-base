@@ -1,0 +1,15 @@
+{"step":"登录与回跳","username":"admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"user","roles":["USER"]}
+{"step":"登录与回跳","username":"reader-56e11779","roles":["USER"]}
+{"step":"登录与回跳","username":"other-56e11779","roles":["USER"]}
+{"step":"普通用户管理页/API 禁止","status":403}
+{"step":"浏览器上传、逐文件解析、加入草稿及提审","space":"5c9d66ea-433d-4a43-8d48-4679dc0b9258","batch":"11ced942-85cb-4afb-a9e3-1b16d7a5cb8f","request":"fe2aef82-95a9-4ed5-86c1-4d72074f7c46","preSearch":404,"files":[{"name":"FIN-TR-017_差旅报销办法_v2.1.md","id":"a8beda3e-ca4f-44ea-b41a-5a68cc4c9976","status":"READY"},{"name":"FIN-TR-022_差旅住宿标准_v1.2.md","id":"f2913ba8-6d68-469f-8094-d1c3fbec370b","status":"READY"}]}
+{"step":"浏览器审核与发布生效","request":"fe2aef82-95a9-4ed5-86c1-4d72074f7c46","snapshot":"5a8faabf-48ed-40d4-891d-bb9205b14139","status":"PUBLISHED"}
+{"step":"浏览器上传、逐文件解析、加入草稿及提审","space":"f5ae9e93-b18f-4393-a7d8-c7a411f1d8d2","batch":"30cdb58b-2c1e-44a9-9d5f-892a8a678c46","request":"f8e437ca-b688-4459-9f6c-e4d2b5a2ea64","preSearch":404,"files":[{"name":"FIN-SP-006_海外驻点例外_v1.0.md","id":"22cc7c08-44ec-46f2-a73d-4eea4adff618","status":"READY"}]}
+{"step":"浏览器审核与发布生效","request":"f8e437ca-b688-4459-9f6c-e4d2b5a2ea64","snapshot":"78b36722-c2a2-4ad2-ade5-3e3ff947c644","status":"PUBLISHED"}
+{"step":"工作台搜索和文档预览","document":"a8beda3e-ca4f-44ea-b41a-5a68cc4c9976"}
+{"step":"浏览器问答、引用打开和原件下载","question":"1d12a241-1792-4c0e-9caf-c5f0509ff241","citation":"7c852022-d399-4c22-9427-b7d790234558","document":"a8beda3e-ca4f-44ea-b41a-5a68cc4c9976","sha256":"130f14c2daa40b935c6c2ebce0617a336765bd0aed112b656913727b44391072"}
+{"step":"限制空间和无依据","allowed":"3d0d9b13-ed3e-44fd-9094-ffdad83f8985","denied":"0f3ca778-4aff-4e04-9f9e-c5d152f95dc2","empty":"bf432da5-a7d5-4cdd-b180-92c864104849"}
+{"step":"撤权屏蔽历史段落和原件","question":"3d0d9b13-ed3e-44fd-9094-ffdad83f8985","status":404}
+{"step":"浏览器撤回与旧回答屏蔽","question":"1d12a241-1792-4c0e-9caf-c5f0509ff241","status":404}
+{"step":"浏览器登出并验证会话失效","logout":204,"me":401}

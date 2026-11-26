@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f9" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      首屏主题解析：必须内联且早于样式加载，否则暗色用户会先看到一帧白色。
+      存储键与值域和 src/theme.ts 保持一致（light / dark / system，缺省 system）。
+    -->
+    <script>
+      ;(function () {
+        var preference = 'system'
+        try {
+          preference = localStorage.getItem('kb.theme') || 'system'
+        } catch (error) {
+          // 无痕模式下读存储抛错：按跟随系统处理。
+        }
+        if (preference !== 'light' && preference !== 'dark') {
+          preference = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+        }
+        document.documentElement.dataset.theme = preference
+      })()
+    </script>
+    <title>AI 智能问答平台</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

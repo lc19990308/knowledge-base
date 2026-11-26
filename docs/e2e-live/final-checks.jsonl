@@ -1,0 +1,4 @@
+{"step":"登录与回跳","username":"e2e-eb19be79-admin","roles":["SYSTEM_ADMIN","USER"]}
+{"step":"登录与回跳","username":"e2e-eb19be79-reader","roles":["USER"]}
+{"step":"新旧政策混合段标签","kind":"EXPIRED","visible":"政策已失效"}
+{"step":"并发撤回仅一次生效","id":"d8ce5ce0-4ddf-4dd3-9a9f-0ba78e03ff97","statuses":[409,200]}

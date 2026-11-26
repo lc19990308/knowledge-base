@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>回答模板 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.tpl-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.tpl-item:last-child { border-bottom: none; }
+.tpl-item .t-main { flex: 1; min-width: 0; }
+.tpl-item .t-name { font-weight: 600; font-size: var(--text-sm); }
+.tpl-item .t-sub { font-size: var(--text-xs); color: var(--muted); margin-top: 2px; }
+.tpl-preview {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); line-height: 1.7;
+}
+.tpl-preview .ph { color: var(--accent); font-family: var(--font-mono); font-size: 12px; background: var(--surface-warm); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html" aria-current="page">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>回答模板</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content">
+      <div class="page-head" data-od-id="tpl-head">
+        <div><h2>回答模板</h2><p class="sub">助手模板优先于全局模板 · 模板不得覆盖权限、引用和政策有效性规则</p></div>
+        <div class="actions"><button class="btn btn-primary">＋ 新建模板</button></div>
+      </div>
+
+      <div class="grid-2" style="align-items:start;">
+        <section class="card" data-od-id="template-list" aria-label="模板列表">
+          <div class="card-head"><h3>模板列表</h3><span class="hint">按优先级排序</span></div>
+          <div class="tpl-item">
+            <div class="t-main"><div class="t-name">差旅专用模板 <span class="badge badge-info">助手级</span></div><div class="t-sub">用于「差旅政策助手」 · 编辑于 2026-11-10</div></div>
+            <span class="badge badge-ok">使用中</span>
+            <a class="btn btn-sm" href="#">编辑</a>
+          </div>
+          <div class="tpl-item">
+            <div class="t-main"><div class="t-name">安全生产问答模板 <span class="badge badge-info">助手级</span></div><div class="t-sub">用于「安全生产问答」 · 编辑于 2026-10-22</div></div>
+            <span class="badge badge-ok">使用中</span>
+            <a class="btn btn-sm" href="#">编辑</a>
+          </div>
+          <div class="tpl-item">
+            <div class="t-main"><div class="t-name">全局默认模板</div><div class="t-sub">未配置助手级模板的助手使用 · 编辑于 2026-09-30</div></div>
+            <span class="badge badge-draft">兜底</span>
+            <a class="btn btn-sm" href="#">编辑</a>
+          </div>
+          <div class="tpl-item">
+            <div class="t-main"><div class="t-name">客服话术模板</div><div class="t-sub">关联助手已停用</div></div>
+            <span class="badge badge-draft">未启用</span>
+            <a class="btn btn-sm" href="#">编辑</a>
+          </div>
+        </section>
+
+        <section class="card" data-od-id="template-editor" aria-label="模板编辑">
+          <div class="card-head"><h3>编辑：差旅专用模板</h3><span class="badge badge-info">助手级</span></div>
+          <div class="field">
+            <label>模板正文</label>
+            <textarea rows="8">根据已审核的差旅政策资料回答用户问题。
+
+回答时必须：
+1. 给出所用文档的引用（{references}）；
+2. 政策已失效时明确提示，不作为现行依据；
+3. 无法从授权文档得出结论时，说明无依据，不编造；
+4. 政策冲突时逐项标出差异，并分别给出对应文档。
+
+请回答：{question}</textarea>
+            <span class="help">可插入变量：{question} 用户问题 · {references} 引用列表 · {validity} 政策有效性标注</span>
+          </div>
+          <div class="notice notice-warn">
+            <span class="n-icon">⚠</span>
+            <span>以下为<strong>系统强制规则</strong>，模板无法移除：权限过滤、引用输出、失效/待核实标注、无依据说明。即使模板正文未提及，这些规则仍然生效。</span>
+          </div>
+          <div class="card-head mt-6" style="margin-top:var(--space-6);"><h3>预览效果</h3></div>
+          <div class="tpl-preview" data-od-id="template-preview">
+            <p>根据已审核的差旅政策资料回答用户问题。</p>
+            <p class="mt-4">回答时必须：</p>
+            <p>1. 给出所用文档的引用（<span class="ph">{references}</span>）；<br>
+            2. 政策已失效时明确提示，不作为现行依据；<br>
+            3. 无法从授权文档得出结论时，说明无依据，不编造；<br>
+            4. 政策冲突时逐项标出差异，并分别给出对应文档。</p>
+            <p class="mt-4">请回答：<span class="ph">{question}</span></p>
+          </div>
+          <div class="flex mt-4" style="justify-content:flex-end;">
+            <button class="btn">取消</button>
+            <button class="btn btn-primary">保存模板</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

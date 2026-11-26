@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识库 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* 空间筛选区 */
+.filter-bar { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); flex-wrap: wrap; }
+.filter-bar .grow { flex: 1; }
+/* 导入面板 */
+.import-panel { border-left: 3px solid var(--accent); }
+.dropzone {
+  border: 1.5px dashed var(--border); border-radius: var(--radius-md);
+  padding: var(--space-8); text-align: center; color: var(--muted);
+  background: var(--bg); margin-bottom: var(--space-4);
+}
+.dropzone b { display: block; font-size: var(--text-base); color: var(--fg); margin-bottom: 4px; }
+.import-row { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.import-row:last-child { border-bottom: none; }
+.import-row .f-icon {
+  width: 32px; height: 32px; border-radius: var(--radius-sm); flex: none;
+  display: grid; place-items: center; font-size: 10px; font-weight: 700;
+  background: var(--border-soft); color: var(--fg-2);
+}
+.import-row .f-main { flex: 1; min-width: 0; }
+.import-row .f-name { font-weight: 600; font-size: var(--text-sm); }
+.import-row .f-sub { font-size: var(--text-xs); color: var(--muted); margin-top: 2px; }
+.import-row .f-status { flex: none; text-align: right; }
+.progress { height: 6px; border-radius: var(--radius-pill); background: var(--border-soft); overflow: hidden; margin-top: 6px; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+/* 版本标记 */
+.ver { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html" aria-current="page">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>知识库</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content">
+      <div class="page-head" data-od-id="kb-head">
+        <div><h2>知识空间</h2><p class="sub">同名判定限定在同一空间；已入库的新旧版本均可检索，不因新版导入自动下架</p></div>
+        <div class="actions"><a class="btn btn-primary" href="#new" id="new-space">＋ 创建空间</a></div>
+      </div>
+
+      <section class="card mb-4" id="new" aria-labelledby="new-title" hidden>
+        <div class="card-head"><h3 id="new-title">创建空间</h3><span class="hint">模拟创建 · 保存为草稿，不会自动发布</span></div>
+        <form id="space-create">
+          <div class="field"><label for="space-name">空间名称</label><input id="space-name" maxlength="50" required></div>
+          <div class="field"><label for="space-team">维护部门</label><input id="space-team" maxlength="30" required></div>
+          <div class="flex"><button class="btn btn-primary" type="submit">创建草稿</button><button class="btn" data-editor-close type="button">取消</button></div>
+        </form>
+      </section>
+      <section class="card mb-4" id="submit-editor" aria-labelledby="submit-title" hidden>
+        <div class="card-head"><h3 id="submit-title"></h3><span class="hint" id="submit-persona"></span></div>
+        <div id="submit-feedback"></div>
+        <form id="space-submit">
+          <div class="field"><label for="submit-note">修改与提交说明（必填）</label><textarea id="submit-note" required maxlength="500"></textarea></div>
+          <div class="flex"><button class="btn btn-primary" type="submit" id="submit-action"></button><button class="btn" data-editor-close type="button">取消</button></div>
+        </form>
+      </section>
+      <p class="text-sm mb-4" id="knowledge-result" role="status" hidden></p>
+      <div class="filter-bar" data-od-id="kb-filter">
+        <input type="search" id="space-filter" aria-label="筛选空间名称" placeholder="筛选空间名称…" style="width:220px;">
+        <select id="status-filter" aria-label="筛选空间状态" style="width:140px;"><option value="">全部状态</option><option value="published">已发布</option><option value="pending">审核中</option><option value="draft">草稿</option><option value="rejected">已驳回</option><option value="withdrawn">已撤回</option></select>
+        <span class="grow"></span>
+        <span class="text-xs muted" id="space-summary"></span>
+      </div>
+
+      <div class="table-wrap" data-od-id="space-table">
+        <table>
+          <thead><tr><th>空间</th><th>状态</th><th>文档 / 可检索</th><th>最近变更</th><th>维护权限</th><th>操作</th></tr></thead>
+          <tbody id="space-rows"></tbody>
+        </table>
+      </div>
+
+      <!-- 文档列表与版本 -->
+      <section class="card mt-6" data-od-id="doc-versions" aria-label="文档与版本">
+        <div class="card-head"><h3>「差旅报销制度」· 文档列表</h3><span class="hint" id="version-hint">新版须另存文件名 · 已发布的新旧版本均可检索</span><a class="more" href="import.html?space=travel">导入新文档 ›</a></div>
+        <div class="table-wrap" style="border:none;">
+          <table>
+            <thead><tr><th>文档名称</th><th>版本</th><th>格式 / 大小</th><th>可检索</th><th>状态</th><th>导入时间</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="row-title">差旅费用报销管理办法-v3.pdf</div><div class="row-sub" id="v3-note">现行依据 · 引用 46 次（近 30 天）</div></td>
+                <td><span class="ver">v3</span></td>
+                <td>PDF · 2.4 MB</td>
+                <td><span class="badge badge-ok">可检索</span></td>
+                <td><span class="badge badge-published">现行</span></td>
+                <td class="num">2026-11-12</td>
+                <td><a class="btn btn-sm" href="#">预览</a></td>
+              </tr>
+              <tr>
+                <td><div class="row-title">差旅费用报销管理办法.pdf</div><div class="row-sub">同空间同名旧版 · 未自动下架</div></td>
+                <td><span class="ver">v2</span></td>
+                <td>PDF · 2.1 MB</td>
+                <td><span class="badge badge-ok">可检索</span></td>
+                <td><span class="badge badge-warn">已失效</span></td>
+                <td class="num">2026-08-20</td>
+                <td><a class="btn btn-sm" href="#">预览</a></td>
+              </tr>
+              <tr>
+                <td><div class="row-title">跨境差旅补充规定.docx</div></td>
+                <td><span class="ver">v1</span></td>
+                <td>Word · 860 KB</td>
+                <td><span class="badge badge-ok">可检索</span></td>
+                <td><span class="badge badge-info">有效性待核实</span></td>
+                <td class="num">2026-10-30</td>
+                <td><a class="btn btn-sm" href="#">预览</a></td>
+              </tr>
+              <tr>
+                <td><div class="row-title">历史报销单据样式表.pdf</div><div class="row-sub">纯扫描件 · 无法提取正文</div></td>
+                <td><span class="ver">v1</span></td>
+                <td>PDF · 18 MB</td>
+                <td><span class="badge badge-fail">不计入</span></td>
+                <td><span class="badge badge-draft">已存档</span></td>
+                <td class="num">2026-09-06</td>
+                <td><a class="btn btn-sm" href="#">预览</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script src="prototype-release.js"></script>
+<script>
+(() => {
+  const api = window.prototypeRelease;
+  const { element, badge, link } = api;
+  const rows = document.getElementById('space-rows');
+  const filter = document.getElementById('space-filter');
+  const statusFilter = document.getElementById('status-filter');
+  const createPanel = document.getElementById('new');
+  const submitPanel = document.getElementById('submit-editor');
+  const createForm = document.getElementById('space-create');
+  const submitForm = document.getElementById('space-submit');
+  const spaceName = document.getElementById('space-name');
+  const team = document.getElementById('space-team');
+  const note = document.getElementById('submit-note');
+  const result = document.getElementById('knowledge-result');
+  const documentRows = document.querySelector('[data-od-id="doc-versions"] tbody');
+  const previews = ['travel-v3', 'travel-v2', 'cross-border', 'travel-scan'];
+  [...documentRows.rows].forEach((row, index) => { row.cells[6].querySelector('a').href = `document.html?doc=${previews[index]}`; });
+  let editing = null;
+  let openerHash = '';
+
+  function showResult(text) {
+    result.textContent = text;
+    result.hidden = !text;
+  }
+  function renderDocs() {
+    documentRows.querySelectorAll('[data-release-doc]').forEach((row) => row.remove());
+    const live = api.getRelease('travel');
+    const v4 = live?.changes.some((item) => item.name === api.FILES.v4);
+    document.getElementById('v3-note').textContent = v4 ? '已入库旧版 · 仍可检索' : '现行依据 · 引用 46 次（近 30 天）';
+    documentRows.rows[0].cells[4].replaceChildren(badge(v4 ? '上一版' : '现行', v4 ? 'badge-draft' : 'badge-published'));
+    document.getElementById('version-hint').textContent = live ? '新版使用不同文件名 · 已发布的新旧版本均可检索'
+      : '已撤回 · 文档记录仅供维护，公开预览不可访问';
+    for (const item of live?.changes ?? []) {
+      const row = element('tr');
+      row.dataset.releaseDoc = item.name;
+      const name = element('td', 'row-title', item.name);
+      const index = element('td');
+      const state = element('td');
+      const action = element('td');
+      const archive = item.kind === 'archive';
+      const version4 = item.name === api.FILES.v4;
+      index.append(badge(archive ? '不计入' : '可检索', archive ? 'badge-fail' : 'badge-ok'));
+      state.append(badge(archive ? '已存档' : version4 ? '现行' : '已发布', archive ? 'badge-draft' : 'badge-published'));
+      action.append(version4 ? link('预览', 'document.html?doc=travel-v4') : element('span', 'muted', '演示记录'));
+      row.append(name, element('td', 'ver', version4 ? 'v4' : 'v1'), element('td', '', item.name.split('.').at(-1).toUpperCase()),
+        index, state, element('td', 'num', live.at.slice(0, 10)), action);
+      documentRows.prepend(row);
+    }
+  }
+  function render() {
+    const query = filter.value.trim().toLowerCase();
+    const spaces = api.list().filter((space) => `${space.name} ${space.team}`.toLowerCase().includes(query)
+      && (!statusFilter.value || api.knowledgeStatus(space) === statusFilter.value));
+    document.getElementById('space-summary').textContent = `${spaces.length} 个空间 · 当前视角：提交用户（可维护所属空间，无发布权限）`;
+    rows.replaceChildren();
+    for (const space of spaces) {
+      const status = api.knowledgeStatus(space);
+      const live = space.withdrawal ? null : space.release;
+      const pendingDocs = api.requestStatus(space) !== 'approved' ? (space.request?.changes ?? []).filter((item) => item.kind !== 'metadata').length : 0;
+      const labels = {
+        pending: live ? `重审期间沿用 ${live.revision}` : '首次申请 · 通过前对用户不可见',
+        rejected: live ? `驳回未审变更 · 保留 ${live.revision}` : '驳回版本不对用户开放',
+        published: live ? `现行 ${live.revision} · 生效 ${live.at.slice(0, 10)}` : '',
+        draft: '未提交发布审核', withdrawn: '用户及旧链接不可访问'
+      };
+      const row = element('tr');
+      const name = element('td');
+      const state = element('td');
+      const maintain = element('td');
+      const actions = element('td');
+      const buttons = element('div', 'flex flex-wrap');
+      name.append(element('div', 'row-title', space.name), element('div', 'row-sub', `${space.team} · 创建于 ${space.created}`));
+      state.append(badge(status === 'pending' ? '审核中' : api.STATUS[status][0], api.STATUS[status][1], true), element('div', 'row-sub', labels[status]));
+      maintain.append(badge(space.maintain ? '可维护' : '只读', space.maintain ? 'badge-ok' : 'badge-draft'));
+      if (space.maintain) {
+        buttons.append(link('导入', `import.html?space=${space.id}`));
+        if (status === 'rejected' || (status === 'withdrawn' && api.requestStatus(space) === 'rejected')) {
+          buttons.append(link('修改后重新提交', `#resubmit-${space.id}`, 'btn btn-sm btn-danger'));
+        } else if (api.requestStatus(space) === 'pending') {
+          buttons.append(link('查看审核进度', `#request-${space.id}`));
+        } else {
+          const text = status === 'published' ? '提交变更审核' : status === 'withdrawn' ? '申请重新发布' : '提交首次审核';
+          buttons.append(link(text, `#submit-${space.id}`));
+        }
+      } else if (space.id === 'contract' || space.id === 'employee') {
+        buttons.append(link('查看文档', `document.html?doc=${space.id === 'contract' ? 'contract-template' : 'employee-attendance'}`));
+      } else {
+        buttons.append(element('span', 'muted', '暂无可预览的演示文档'));
+      }
+      actions.append(buttons);
+      const copies = `${space.documents + pendingDocs} / ${live?.searchable ?? 0}${!live && status !== 'draft' ? '（对用户不可见）' : ''}`;
+      row.append(name, state, element('td', 'num', copies), element('td', 'num', space.modified), maintain, actions);
+      rows.append(row);
+    }
+    if (!rows.children.length) {
+      const row = element('tr');
+      const cell = element('td', 'muted', '暂无符合条件的空间');
+      cell.colSpan = 6;
+      row.append(cell);
+      rows.append(row);
+    }
+    renderDocs();
+    api.refreshNav();
+  }
+  function closeEditor(restoreFocus = true) {
+    createPanel.hidden = true;
+    submitPanel.hidden = true;
+    editing = null;
+    if (restoreFocus) {
+      const target = [...rows.querySelectorAll('a')].find((anchor) => anchor.hash === openerHash);
+      (target ?? document.getElementById('new-space')).focus();
+    }
+    openerHash = '';
+  }
+  function route() {
+    const hash = location.hash;
+    closeEditor(false);
+    if (hash === '#new' || hash === '#new-space') {
+      openerHash = '#new';
+      createPanel.hidden = false;
+      spaceName.focus();
+      return;
+    }
+    const match = /^#(submit|resubmit|request)-([a-z0-9-]+)$/.exec(hash);
+    if (!match) return;
+    const [, action, id] = match;
+    const space = api.getSpace(id);
+    if (!space?.maintain) return;
+    const state = api.requestStatus(space);
+    if ((action === 'resubmit' && state !== 'rejected') || (action === 'request' && state !== 'pending')
+      || (action === 'submit' && ['pending', 'rejected'].includes(state))) return;
+    const feedback = document.getElementById('submit-feedback');
+    feedback.replaceChildren();
+    if (action === 'resubmit') {
+      const reasons = element('ul');
+      for (const reason of space.request.outcome.reasons) reasons.append(element('li', '', reason));
+      const warning = element('div', 'notice notice-fail mb-4');
+      const contents = element('div');
+      contents.append(element('strong', '', `管理员 ${space.request.outcome.by} 驳回原因`), reasons);
+      warning.append(contents);
+      feedback.append(warning);
+    } else if (action === 'request') {
+      feedback.append(element('p', 'notice notice-info mb-4', `${space.request.at} 提交 · ${space.request.reason} · ${api.getRelease(id) ? '继续沿用上次发布' : '通过前对用户不可见'}`),
+        link('切换至管理员审核', `publish.html#review-${id}`));
+    }
+    const label = action === 'resubmit' ? '修改后重新提交' : action === 'request' ? '查看审核进度' : space.release ? '提交变更审核' : '提交首次审核';
+    document.getElementById('submit-title').textContent = `${label} · ${space.name}`;
+    document.getElementById('submit-persona').textContent = `模拟提交人：${space.owner}`;
+    document.getElementById('submit-action').textContent = label;
+    submitForm.reset();
+    submitForm.hidden = action === 'request';
+    submitPanel.hidden = false;
+    openerHash = hash;
+    editing = action === 'request' ? null : id;
+    if (editing) note.focus();
+    else feedback.querySelector('a').focus();
+  }
+  createForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const space = api.create(spaceName.value, team.value);
+    if (!space) {
+      spaceName.setCustomValidity('请填写空间名称和部门，空间名称不能重复。');
+      spaceName.reportValidity();
+      spaceName.setCustomValidity('');
+      return;
+    }
+    createForm.reset();
+    filter.value = space.name;
+    statusFilter.value = '';
+    api.setHash();
+    closeEditor();
+    render();
+    showResult(`已创建草稿：${space.name}。可先导入演示文档，或提交首次审核。`);
+  });
+  submitForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!editing || !note.value.trim()) {
+      note.setCustomValidity('请填写本次修改与提交说明。');
+      note.reportValidity();
+      note.setCustomValidity('');
+      return;
+    }
+    if (!api.submit(editing, note.value)) {
+      showResult('申请状态已变化，请重新选择空间。');
+      return;
+    }
+    const review = link('切换至管理员审核', `publish.html#review-${editing}`);
+    api.setHash();
+    closeEditor();
+    statusFilter.value = '';
+    render();
+    showResult('模拟申请已提交，等待管理员审核。 ');
+    result.append(review);
+    review.focus();
+  });
+  for (const button of document.querySelectorAll('[data-editor-close]')) button.addEventListener('click', () => { api.setHash(); closeEditor(); });
+  filter.addEventListener('input', render);
+  statusFilter.addEventListener('change', render);
+  window.addEventListener('hashchange', route);
+  window.addEventListener(api.CHANGE_EVENT, render);
+  window.addEventListener('pageshow', render);
+  render();
+  route();
+})();
+</script>
+
+</body>
+</html>

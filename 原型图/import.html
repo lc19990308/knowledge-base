@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>导入文档 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.dropzone {
+  border: 1.5px dashed var(--border); border-radius: var(--radius-md);
+  padding: var(--space-8); text-align: center; color: var(--muted);
+  background: var(--bg); margin-bottom: var(--space-5);
+}
+.dropzone b { display: block; font-size: var(--text-base); color: var(--fg); margin-bottom: 4px; }
+.import-row { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; border-bottom: 1px solid var(--border-soft); }
+.import-row:last-child { border-bottom: none; }
+.f-icon {
+  width: 34px; height: 34px; border-radius: var(--radius-sm); flex: none;
+  display: grid; place-items: center; font-size: 10px; font-weight: 700;
+  background: var(--border-soft); color: var(--fg-2);
+}
+.f-main { flex: 1; min-width: 0; }
+.f-name { font-weight: 600; font-size: var(--text-sm); }
+.f-sub { font-size: var(--text-xs); color: var(--muted); margin-top: 2px; line-height: 1.5; }
+.f-status { flex: none; width: 200px; text-align: right; }
+.f-status .badge { justify-content: flex-end; }
+.progress { height: 6px; border-radius: var(--radius-pill); background: var(--border-soft); overflow: hidden; margin-top: 8px; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.summary-bar { display: flex; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--bg); border-radius: var(--radius-sm); font-size: var(--text-sm); margin-bottom: var(--space-2); }
+.summary-bar b { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html" aria-current="page">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>导入文档</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content" style="max-width:960px;">
+      <div class="page-head" data-od-id="import-head">
+        <div><h2>导入文档</h2><p class="sub">支持 PDF、Word、Excel、PowerPoint、TXT、Markdown · 具体扩展名与大小限制以导入支持矩阵为准 · 首期不做 OCR</p></div>
+        <div class="actions"><a class="btn" href="knowledge.html">返回知识库</a></div>
+      </div>
+
+      <!-- 步骤 -->
+      <div class="steps mb-4" data-od-id="import-steps" aria-label="导入流程">
+        <span class="step done"><span class="s-idx">✓</span>选择空间：差旅报销制度</span>
+        <span class="step-arrow">→</span>
+        <span class="step now"><span class="s-idx">2</span>上传文件</span>
+        <span class="step-arrow">→</span>
+        <span class="step"><span class="s-idx">3</span>逐文件确认处理结果</span>
+        <span class="step-arrow">→</span>
+        <span class="step"><span class="s-idx">4</span>（已发布空间）提交变更审核</span>
+      </div>
+
+      <div class="notice notice-info mb-4" data-od-id="import-rule">
+        <span class="n-icon">ℹ</span>
+        <span><strong>同名规则</strong>：同一空间内同名文件跳过、不覆盖原文件；上传新版前必须改名。已发布的新旧版本均可检索。以下仅模拟导入，不读取或上传真实文件。</span>
+      </div>
+
+      <form class="card mb-4" id="demo-file" hidden>
+        <div class="card-head"><h3 id="demo-file-title">选择演示文件</h3><span class="hint">仅记录演示名称，不读取本地文件</span></div>
+        <div class="field"><label for="demo-filename">文件名称（含扩展名）</label><input id="demo-filename" required maxlength="120"><span class="help" id="filename-help"></span></div>
+        <div class="flex"><button class="btn btn-primary" type="submit">模拟导入</button><button class="btn" id="cancel-file" type="button">取消</button></div>
+      </form>
+      <section class="card" data-od-id="upload-zone" aria-label="上传">
+        <div class="dropzone">
+          <b>选择演示文件，查看模拟处理结果</b>
+          单文件上限 100 MB · 批量导入逐文件展示结果
+          <div class="e-actions" style="margin-top:12px;">
+            <button class="btn btn-primary" id="add-sample" type="button">选择演示文件</button>
+          </div>
+        </div>
+
+        <!-- 批量结果汇总 -->
+        <div class="summary-bar" data-od-id="import-summary" role="status">
+          <span>本次 5 个文件：<b>2</b> 可检索 · <b>1</b> 同名已跳过 · <b>1</b> 无可提取正文 · <b>1</b> 处理失败（可重试）</span>
+        </div>
+
+        <!-- 逐文件结果 -->
+        <div class="import-row" data-od-id="import-row-1">
+          <span class="f-icon">PDF</span>
+          <div class="f-main">
+            <div class="f-name">差旅费用报销管理办法-v4.pdf</div>
+            <div class="f-sub">2.8 MB · 正文 12,437 字 · 已建立索引</div>
+            <div class="progress"><i style="width:100%;"></i></div>
+          </div>
+          <div class="f-status"><span class="badge badge-ok"><span class="dot"></span>可检索</span></div>
+        </div>
+
+        <div class="import-row" data-od-id="import-row-2">
+          <span class="f-icon">XLS</span>
+          <div class="f-main">
+            <div class="f-name">2026 差旅住宿标准表.xlsx</div>
+            <div class="f-sub">340 KB · 3 个工作表均已解析</div>
+          </div>
+          <div class="f-status"><span class="badge badge-ok"><span class="dot"></span>可检索</span></div>
+        </div>
+
+        <div class="import-row" data-od-id="import-row-3">
+          <span class="f-icon">PDF</span>
+          <div class="f-main">
+            <div class="f-name">差旅费用报销管理办法.pdf</div>
+            <div class="f-sub">与空间内已有旧版同名。原文件不覆盖；上传新版前必须改名。<button class="btn btn-sm" id="rename-sample" type="button">改名后重新导入</button></div>
+          </div>
+          <div class="f-status"><span class="badge badge-warn"><span class="dot"></span>同名已跳过</span></div>
+        </div>
+
+        <div class="import-row" data-od-id="import-row-4">
+          <span class="f-icon">PDF</span>
+          <div class="f-main">
+            <div class="f-name">报销单据扫描归档.pdf</div>
+            <div class="f-sub">纯扫描件，无法提取正文。已存档，不计入可检索文档数。</div>
+          </div>
+          <div class="f-status"><span class="badge badge-draft"><span class="dot"></span>无可提取正文</span></div>
+        </div>
+
+        <div class="import-row" data-od-id="import-row-5">
+          <span class="f-icon">MD</span>
+          <div class="f-main">
+            <div class="f-name">境外差旅安全提示.md</div>
+            <div class="f-sub">解析超时（第 3 次系统内部重试未新增提问/记录）。此为技术性失败，可重试；已成功文件无需重新导入。</div>
+          </div>
+          <div class="f-status">
+            <span class="badge badge-fail"><span class="dot"></span>处理失败</span>
+            <div class="mt-4" style="margin-top:8px;"><button class="btn btn-sm">重试</button></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="flex mt-4" data-od-id="import-footer">
+        <span class="grow"></span>
+        <a class="btn" href="knowledge.html">稍后处理</a>
+        <button class="btn btn-primary" id="send-import" type="button">提交变更审核（模拟）</button>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="prototype-release.js"></script>
+<script>
+(() => {
+  const api = window.prototypeRelease;
+  const { element, badge, FILES } = api;
+  const requested = new URLSearchParams(location.search).get('space');
+  const id = requested ?? 'travel';
+  const form = document.getElementById('demo-file');
+  const filename = document.getElementById('demo-filename');
+  const card = document.querySelector('[data-od-id="upload-zone"]');
+  const summary = document.querySelector('[data-od-id="import-summary"]');
+  const footer = document.querySelector('[data-od-id="import-footer"]');
+  const send = document.getElementById('send-import');
+  const add = document.getElementById('add-sample');
+  const rename = document.getElementById('rename-sample');
+  const fixed = [...card.querySelectorAll('.import-row')];
+  const target = api.getSpace(id);
+  const canImport = !!target?.maintain;
+  const formats = /\.(?:pdf|docx|xlsx|pptx|txt|md)$/i;
+  const steps = document.querySelectorAll('[data-od-id="import-steps"] .step');
+  let opener = add;
+  let retryState = 'failed';
+  let renamed = false;
+  let sending = false;
+  const entries = id === 'travel' && canImport ? [
+    { name: FILES.v4, kind: 'revision', detail: '修订 v3→v4' },
+    { name: FILES.rates, kind: 'new', detail: '新增' },
+    { name: FILES.archive, kind: 'archive', detail: '新增存档 · 不计入检索' }
+  ] : [];
+  if (id !== 'travel' || !canImport) fixed.forEach((row) => row.remove());
+  const status = element('p', 'text-sm muted mt-4');
+  status.setAttribute('role', 'status');
+  footer.before(status);
+  steps[0].lastChild.textContent = `选择空间：${target?.name ?? '空间不可用'}`;
+  steps[1].lastChild.textContent = '模拟导入';
+  steps[3].lastChild.textContent = '提交发布审核';
+  if (!canImport) {
+    add.disabled = true;
+    status.textContent = '空间不存在或只有只读权限，不能模拟导入。';
+  }
+  function pendingChanges() {
+    const space = api.getSpace(id);
+    if (!space || !canImport) return [];
+    const known = api.knownFilenames(space);
+    return entries.filter((entry) => !known.has(entry.name));
+  }
+  function render() {
+    const good = entries.filter((entry) => entry.kind !== 'archive').length;
+    const archive = entries.length - good;
+    const skipped = id === 'travel' && canImport && !renamed ? 1 : 0;
+    const failed = id === 'travel' && canImport && retryState !== 'success' ? 1 : 0;
+    const total = entries.length + skipped + failed;
+    summary.textContent = `本次 ${total} 个演示文件：${good} 解析成功 · ${skipped} 同名已跳过 · ${archive} 无可提取正文 · ${failed} ${retryState === 'running' ? '重试中' : '处理失败'}`;
+    const space = api.getSpace(id);
+    const changes = pendingChanges();
+    send.disabled = !changes.length || sending || retryState === 'running';
+    if (space) {
+      send.textContent = api.requestStatus(space) === 'pending' ? '补充变更并重新提交（模拟）'
+        : api.requestStatus(space) === 'rejected' ? '提交修改并重审（模拟）'
+        : space.release ? '提交变更审核（模拟）' : '提交首次发布审核（模拟）';
+      if (canImport) status.textContent = changes.length ? `${changes.length} 项演示变更可提交。未审变更不可被用户检索。`
+        : '当前没有新的演示文件可提交；已在审批申请中或已发布的文件不会重复导入。';
+    }
+    api.refreshNav();
+  }
+  function openPicker(button, value) {
+    opener = button;
+    document.getElementById('demo-file-title').textContent = button === rename ? '改名后重新导入' : '选择演示文件';
+    document.getElementById('filename-help').textContent = button === rename ? '文件名须与空间内已入库、待审及本批文件均不同。' : '支持 .pdf、.docx、.xlsx、.pptx、.txt、.md；不打开本地文件。';
+    filename.value = value;
+    form.hidden = false;
+    filename.focus();
+    filename.select();
+  }
+  function closePicker() { form.hidden = true; opener.focus(); }
+  function addFileRow(name, replaceRow) {
+    const row = replaceRow ?? element('div', 'import-row');
+    const file = element('div', 'f-main');
+    const result = element('div', 'f-status');
+    file.append(element('div', 'f-name', name), element('div', 'f-sub', '演示正文已解析；通过发布审核后才能检索。'));
+    result.append(badge('解析成功', 'badge-ok', true));
+    row.replaceChildren(element('span', 'f-icon', name.split('.').at(-1).toUpperCase()), file, result);
+    if (!replaceRow) card.append(row);
+  }
+  add.addEventListener('click', () => openPicker(add, '新增演示文档.md'));
+  rename.addEventListener('click', () => openPicker(rename, FILES.v2));
+  document.getElementById('cancel-file').addEventListener('click', closePicker);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = filename.value.trim();
+    const space = api.getSpace(id);
+    if (!space?.maintain) return;
+    const names = new Set([...api.knownFilenames(space), ...entries.map((entry) => entry.name), ...(id === 'travel' ? [FILES.tips] : [])]);
+    const error = /[/\\\u0000-\u001f]/.test(name) || !formats.test(name) || name.startsWith('.') ? '请填写有效的文件名称与支持的扩展名。'
+      : names.has(name) ? '同名已跳过；请先改成空间内和批次中都未使用的文件名称。' : '';
+    if (error) {
+      document.getElementById('filename-help').textContent = error;
+      filename.setCustomValidity(error);
+      filename.reportValidity();
+      filename.setCustomValidity('');
+      return;
+    }
+    if (opener === rename && !name.toLowerCase().endsWith('.pdf')) {
+      document.getElementById('filename-help').textContent = '此演示是重命名 PDF，请保留 .pdf 扩展名。';
+      filename.focus();
+      return;
+    }
+    if (opener === rename) renamed = true;
+    entries.push({ name, kind: 'new', detail: '新增' });
+    closePicker();
+    addFileRow(name, renamed && opener === rename ? fixed[2] : null);
+    add.focus();
+    render();
+  });
+  if (id === 'travel' && canImport) {
+    const retryRow = fixed[4];
+    const retry = retryRow.querySelector('button');
+    const retryBadge = retryRow.querySelector('.badge');
+    fixed.slice(0, 2).forEach((row) => { row.querySelector('.badge').lastChild.textContent = '解析成功'; });
+    retry.addEventListener('click', () => {
+      if (retryState !== 'failed') return;
+      retryState = 'running';
+      retry.disabled = true;
+      retryBadge.replaceWith(badge('重试中', 'badge-review', true));
+      render();
+      window.setTimeout(() => {
+        retryState = 'success';
+        entries.push({ name: FILES.tips, kind: 'new', detail: '新增（重试成功）' });
+        retryRow.querySelector('.f-sub').textContent = '单文件重试成功 · 演示正文已解析，未重复处理其他文件。';
+        retryRow.querySelector('.f-status').replaceChildren(badge('解析成功', 'badge-ok', true));
+        render();
+        if (document.activeElement === document.body) send.focus();
+      }, 450);
+    });
+  }
+  send.addEventListener('click', () => {
+    const changes = pendingChanges();
+    if (sending || retryState === 'running' || !changes.length) return;
+    sending = true;
+    const description = `模拟导入：${changes.length} 项文档变更${changes.some((entry) => entry.kind === 'archive') ? '（含无可提取正文的存档）' : ''}`;
+    if (!api.submit(id, description, changes)) {
+      sending = false;
+      render();
+      status.textContent = '待审数据已更新，请检查演示文件后重试。';
+      return;
+    }
+    location.assign(`knowledge.html#request-${id}`);
+  });
+  window.addEventListener(api.CHANGE_EVENT, render);
+  window.addEventListener('pageshow', () => { sending = false; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

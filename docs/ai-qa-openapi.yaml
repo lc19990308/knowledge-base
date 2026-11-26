@@ -1,0 +1,1869 @@
+openapi: 3.1.0
+info:
+  title: AI 问答后端 API
+  version: 1.0.0
+  description: |
+    当前应用 API，统一前缀 /api/v1。浏览器支持本地账号或企业 OIDC，登录跳转和回调不属于本契约。
+    会话写请求携带 GET /auth/csrf 发放的令牌和对应 CSRF Cookie。幂等键只在各操作声明要求时发送。使用幂等台账的操作以用户、操作和键去重，保存资源标识，不保证重放历史响应正文。
+    所有 API 2xx JSON 响应使用 {code: OK, data, requestId}；data 保持各操作原有 DTO。204 无正文，下载成功返回原始字节，重定向不包装。
+    data 中使用 items / nextCursor 的接口目前返回 nextCursor: null；列表接口改为 offset/limit 分页并返回 total（省略 limit 时返回全部记录），不消费 cursor。助手与登录方式列表返回 items 与 total，不含游标。
+    错误使用 application/problem+json；正文 status 等于 HTTP 状态，成功和错误正文的 requestId 等于 X-Request-Id 响应头。
+    框架对已知路由的非允许方法返回 405 METHOD_NOT_ALLOWED（参见 components.responses.MethodNotAllowed）；对不可接受的响应媒体类型返回 406 NOT_ACCEPTABLE。
+    问答和导入采用异步任务及轮询。搜索、统计、状态查询分别计量，读取限流默认仅观测。
+servers: [{url: /api/v1}]
+security: [{SessionCookie: []}]
+paths:
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      summary: 查询当前会话身份与系统角色
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 当前用户, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CurrentUser'}}}]}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/csrf:
+    get:
+      operationId: getCsrfToken
+      summary: 获取 CSRF 请求令牌（可匿名访问）
+      security: []
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 保留 XSRF-TOKEN Cookie，并将 token 放入 X-CSRF-TOKEN 请求头, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {type: object, required: [token], properties: {token: {type: string, minLength: 1}}}}}]}}}}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/providers:
+    get:
+      operationId: listLoginProviders
+      summary: 当前可用的登录方式
+      description: 公开接口；返回已配置的企业 SSO 注册。未接入 IdP 时 items 为空，登录页据此隐藏 SSO 按钮。
+      security: []
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 登录方式列表, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/LoginProviders'}}}]}}}}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/captcha:
+    get:
+      operationId: getLoginCaptcha
+      summary: 获取登录图形验证码（可匿名访问）
+      description: |
+        返回一次性验证码标识与 PNG 图片（data URL）。验证码默认 2 分钟过期，校验一次即作废；
+        登录时必须原样回传 captchaId 与图上字符，缺失、过期或不匹配均返回 400 INVALID_CAPTCHA。
+      security: []
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 验证码, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/LoginCaptcha'}}}]}}}}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/login:
+    post:
+      operationId: login
+      summary: 本地账号密码登录
+      description: |
+        公开接口；成功建立服务器会话并返回与 /me 相同的会话视图。验证码缺失、过期或不匹配返回
+        400 INVALID_CAPTCHA（先于密码校验，不计入密码失败次数）。凭据无效返回 401 INVALID_CREDENTIALS
+        （不区分用户名不存在与密码错误），账号停用返回 403 ACCOUNT_DISABLED，失败次数超限返回 429 RATE_LIMITED。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginInput'}}}}
+      security: []
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 会话用户, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CurrentUser'}}}]}}}}
+        '400': {$ref: '#/components/responses/InvalidCaptcha'}
+        '401': {$ref: '#/components/responses/InvalidCredentials'}
+        '403': {$ref: '#/components/responses/AuthWriteForbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: 注销应用会话并清除会话 Cookie
+      security: []
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      responses:
+        '204': {description: 会话已注销，无响应体, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Set-Cookie: {description: 使 QA_SESSION 立即过期, schema: {type: string}}}}
+        '403': {$ref: '#/components/responses/AuthWriteForbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users:
+    post:
+      operationId: createLocalUser
+      summary: 创建本地账号（用户名+初始密码）
+      description: 仅系统管理员；用户名全局唯一（issuer=local），密码 8–72 字符。创建后即可在登录页登录。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LocalUserInput'}}}}
+      responses:
+        '201': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已创建, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UserAccessView'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/UsernameConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    get:
+      operationId: listUsers
+      summary: 系统管理员按显示名或用户 ID 查找已登记用户
+      description: 最多返回 50 人。
+      parameters:
+        - {name: q, in: query, schema: {type: string, default: ''}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses: {'200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 用户分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UserPage'}}}]}}}}, '400': {$ref: '#/components/responses/BadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /users/{userId}/credential:
+    post:
+      operationId: resetUserCredential
+      summary: 重置本地账号密码
+      description: 仅系统管理员；企业 IdP 账号不适用（422）。
+      parameters: [{name: userId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}, {$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CredentialInput'}}}}
+      responses:
+        '204': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已重置}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{userId}/access:
+    parameters: [{$ref: '#/components/parameters/UserId'}]
+    put:
+      operationId: putUserAccess
+      summary: 系统管理员替换用户的应用启用状态和系统角色
+      description: 禁用后现有会话与后续请求立即失去应用访问权限；不得移除最后一个启用的管理员。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UserAccess'}}}}
+      responses: {'200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 生效的访问配置, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UserAccessView'}}}]}}}}, '400': {$ref: '#/components/responses/BadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /spaces:
+    get:
+      operationId: listSpaces
+      summary: 列出可见知识空间
+      description: 普通读者仅见有读取权限且已发布的空间；有维护权限者及系统管理员可在管理范围内看到未发布空间。按名称筛选（q）与发布状态筛选（status）在服务端完成，total 为筛选后的总数。
+      parameters:
+        - {name: q, in: query, schema: {type: string, default: ''}, description: 按空间名称包含匹配。}
+        - {name: status, in: query, schema: {type: string, enum: [PUBLISHED, DRAFT, REVIEWING]}, description: PUBLISHED 当前有发布内容，DRAFT 没有任何发布，REVIEWING 存在待审核或待生效的发布申请。}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 空间分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/SpacePage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createSpace
+      summary: 系统管理员或持有 canCreateSpace 权限的用户创建知识空间
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SpaceInput'}}}}
+      responses:
+        '201': {description: 已创建，尚未发布, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Space'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    get:
+      operationId: getSpace
+      summary: 查询可见空间及其当前发布指针
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 空间详情, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Space'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/draft:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    get:
+      operationId: getDraft
+      summary: 维护者读取草稿文档清单和版本
+      responses:
+        '200': {$ref: '#/components/responses/Draft'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: replaceDraft
+      summary: 维护者以整份清单替换草稿
+      description: 草稿清单只引用本空间的已入库版本，文件名来自导入时的文件元数据，不接受改名。替代关系不会自动移除旧版本；不改变已冻结申请或当前发布。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DraftInput'}}}}
+      responses:
+        '200': {$ref: '#/components/responses/Draft'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/draft/documents/{documentVersionId}:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}, {$ref: '#/components/parameters/DocumentVersionId'}]
+    get:
+      operationId: getDraftDocumentPreview
+      summary: 维护者预览草稿清单中的文档版本
+      description: 须有当前空间维护权限且版本属于当前草稿；不提供原件下载链接。
+      responses: {'200': {$ref: '#/components/responses/DraftDocumentPreview'}, '401': {$ref: '#/components/responses/Unauthorized'}, '404': {$ref: '#/components/responses/NotFound'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /spaces/{spaceId}/imports:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    post:
+      operationId: importDocuments
+      summary: 维护者异步批量导入文档
+      description: 每批最多 10 个文件，单文件不得超过 10 MiB，超限返回 413。 同名判定限定同一空间，跳过不覆盖。逐文件返回处理结果。纯扫描件不做 OCR。导入不自动发布。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {type: object, required: [files], additionalProperties: false, properties: {files: {type: array, minItems: 1, maxItems: 10, items: {type: string, format: binary}}}}
+            encoding: {files: {contentType: application/octet-stream}}
+      responses:
+        '202': {description: 批次已登记，按上传顺序返回每个文件的初始结果, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ImportBatch'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/ImportUnprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /imports/{batchId}:
+    parameters: [{name: batchId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: getImportBatch
+      summary: 查询导入批次和逐文件最新状态
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 批次详情, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ImportBatch'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/documents/{documentVersionId}/versions:
+    post:
+      operationId: uploadDocumentVersion
+      summary: 更新已入库文档：同文件名的新内容生成下一版本（维护权限）
+      description: multipart 上传 `file`；文件名须与目标文档一致，改名属于另一份文档，应走导入。扫描不通过的文件不会入库。
+      parameters:
+        - {name: spaceId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: documentVersionId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 3, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        '202':
+          description: 新版本已入队解析
+          headers: {Location: {schema: {type: string}}, X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {type: object, required: [documentVersionId, versionNumber, status], properties: {documentVersionId: {type: string, format: uuid}, versionNumber: {type: integer, minimum: 1}, status: {type: string, enum: [QUEUED, PROCESSING, READY, NO_TEXT, FAILED]}}}}}]}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /spaces/{spaceId}/documents/{documentVersionId}/retry:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}, {$ref: '#/components/parameters/DocumentVersionId'}]
+    post:
+      operationId: retryDocument
+      summary: 维护者重试技术性处理失败的文档版本
+      description: 复用原文档版本，不新增文档或重复索引；已有重试任务时返回同一处理中的版本。其他不可重试状态返回 409。服务端要求非空 Idempotency-Key，但这里不使用幂等台账。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/NonBlankKey'}]
+      responses:
+        '202': {description: 重试已受理，Location 指向普通发布预览路径，文档未发布时该路径仍不可读, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/DocumentPreview'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/RetryConflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /spaces/{spaceId}/search:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    get:
+      operationId: searchSpace
+      summary: 按文档名称、正文或两者搜索空间内容
+      description: 普通用户只检索当前有权限的已发布快照；系统管理员可检索任意空间，包括已撤回与从未发布的空间。空间已删除，或普通用户无读取权限、空间未发布时返回 404。source 指定内容来源：auto 依次回退到当前发布、最近一次发布、草稿；published 只认当前发布；latest 取最近一次发布（含已撤回）；draft 取未发布草稿。published/latest/draft 仅系统管理员可用，普通用户传入返回 422。响应中的 contentSource 标明本次命中来自 PUBLISHED、WITHDRAWN 还是 DRAFT。没有命中时，若所选来源中有 QUEUED 或 PROCESSING 文档则返回 PROCESSING，否则为 NO_MATCH。空白关键词直接返回 NO_MATCH。
+      parameters:
+        - {name: q, in: query, schema: {type: string, default: ''}}
+        - {name: field, in: query, schema: {type: string, enum: [NAME, TEXT, ALL], default: ALL}}
+        - {name: source, in: query, schema: {type: string, enum: [auto, published, latest, draft], default: auto}}
+      responses: {'200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 有结果、当前已发布索引正在修复或无匹配, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/SearchResult'}}}]}}}}, '422': {$ref: '#/components/responses/Unprocessable'}, '400': {$ref: '#/components/responses/BadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '404': {$ref: '#/components/responses/NotFound'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '429': {$ref: '#/components/responses/RateLimited'}, '403': {$ref: '#/components/responses/Forbidden'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /spaces/{spaceId}/documents/{documentVersionId}:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}, {$ref: '#/components/parameters/DocumentVersionId'}]
+    get:
+      operationId: getDocumentPreview
+      summary: 获取有权查看的文档与纯文本预览
+      description: 此使用侧入口只读当前发布快照内的文档，维护者也不能绕过；系统管理员例外，可读最近一次发布快照（含已撤回）与当前草稿中的文档。不在可读集合内或无权访问返回 404。返回服务端生成的纯文本 DTO，不返回存储地址、下载链接或 HTML。
+      responses:
+        '200': {$ref: '#/components/responses/DocumentPreview'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/documents/{documentVersionId}/content:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}, {$ref: '#/components/parameters/DocumentVersionId'}]
+    get:
+      operationId: downloadDocument
+      summary: 实时校验文档版本权限后下载原件
+      description: 与直接预览具有相同授权边界（含系统管理员可读已撤回与未发布内容）；由服务端返回字节，不重定向至对象存储。
+      responses:
+        '200': {$ref: '#/components/responses/DocumentBytes'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/publish-requests:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    get:
+      operationId: listSpacePublishRequests
+      summary: 指定空间的发布申请
+      description: 提交者与管理员可见；与全局申请列表口径一致，支持状态筛选与分页。
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [PENDING_REVIEW, APPROVED_WAITING_INDEX, REJECTED, PUBLISHED, CANCELLED]}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 申请列表, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/PublishRequestPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: submitPublishRequest
+      summary: 维护者冻结指定草稿并提交审核
+      description: 可选提交原因。If-Match 必须是 GET 草稿返回的 ETag；申请冻结清单和提交时发布状态，提交后草稿仍可编辑，已发布快照不受影响。If-Match 格式非法或草稿版本不匹配均返回 412 ETAG_MISMATCH。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/SubmitInput'}}}}
+      responses:
+        '201': {$ref: '#/components/responses/CreatedPublishRequest'}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/SubmissionConflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /publish-requests:
+    get:
+      operationId: listPublishRequests
+      summary: 列出审核申请，管理员查看全部，其他用户仅查看自己提交的申请
+      description: 可按状态筛选（status）；total 为筛选后的总数。
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [PENDING_REVIEW, APPROVED_WAITING_INDEX, REJECTED, PUBLISHED, CANCELLED]}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 审核申请分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/PublishRequestPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /publish-requests/{requestId}:
+    parameters: [{$ref: '#/components/parameters/RequestId'}]
+    get:
+      operationId: getPublishRequest
+      summary: 管理员或提交人读取审核申请和冻结快照
+      responses:
+        '200': {$ref: '#/components/responses/PublishRequest'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /publish-requests/{requestId}/documents/{documentVersionId}:
+    parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/DocumentVersionId'}]
+    get:
+      operationId: getReviewDocumentPreview
+      summary: 管理员或有权读取申请的提交者查看冻结清单内的文档预览
+      description: 按申请及冻结清单校验版本；无权或版本不在快照时统一返回 404。不提供原件下载链接，不使用普通空间文档接口访问未审原文。
+      responses: {'200': {$ref: '#/components/responses/DocumentPreview'}, '401': {$ref: '#/components/responses/Unauthorized'}, '404': {$ref: '#/components/responses/NotFound'}, '503': {$ref: '#/components/responses/ServiceUnavailable'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /publish-requests/{requestId}/decision:
+    parameters: [{$ref: '#/components/parameters/RequestId'}]
+    post:
+      operationId: decidePublishRequest
+      summary: 系统管理员批准或驳回指定申请版本
+      description: If-Match 取自申请详情的 ETag，当前实现使用空间草稿版本。If-Match 格式非法或草稿版本不匹配均返回 412 ETAG_MISMATCH。APPROVE 时，索引未就绪则进入 APPROVED_WAITING_INDEX，保留原发布；索引就绪且预期发布状态未变时原子切换。REJECT 可处理 PENDING_REVIEW 或 APPROVED_WAITING_INDEX。发布状态冲突返回 409；旧审核不能重新激活已撤回空间。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DecisionInput'}}}}
+      responses:
+        '200': {$ref: '#/components/responses/PublishRequest'}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/PublicationConflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /spaces/{spaceId}/withdrawals:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    post:
+      operationId: withdrawPublication
+      summary: 系统管理员撤回当前发布并推进发布代次
+      description: expectedPublicationId 与当前发布不一致时返回 409；成功时 当前发布指针置空，响应省略 currentPublicationId。重新发布不会恢复旧代次的引用或被屏蔽的历史段落。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WithdrawalInput'}}}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 撤回后的发布状态, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/WithdrawalResult'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/WithdrawalConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /spaces/{spaceId}/reindex:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    post:
+      operationId: reindexSpace
+      summary: 维护者触发当前已解析文档的索引重建
+      description: 仅对解析状态为 READY 的文档入队，复用现有分块重建流程；不改变文档可见性、发布指针或审核状态。服务端要求非空 Idempotency-Key，但这里按活跃索引任务去重，不使用幂等台账。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/NonBlankKey'}]
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已入队的文档数, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {type: object, required: [spaceId, enqueued], properties: {spaceId: {$ref: '#/components/schemas/Id'}, enqueued: {type: integer, minimum: 0}}}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /spaces/{spaceId}/members:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}]
+    get:
+      operationId: listSpaceMembers
+      summary: 系统管理员读取仍有授权的空间成员
+      responses: {'200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 成员分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/MemberPage'}}}]}}}}, '400': {$ref: '#/components/responses/BadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /spaces/{spaceId}/members/{userId}:
+    parameters: [{$ref: '#/components/parameters/SpaceId'}, {$ref: '#/components/parameters/UserId'}]
+    put:
+      operationId: putSpaceMember
+      summary: 系统管理员设置空间成员权限，两个权限均为 false 时撤销授权
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MemberPermissions'}}}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 生效的权限（完全撤销时两个权限均为 false）, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/SpaceMember'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{userId}/space-memberships:
+    parameters: [{$ref: '#/components/parameters/UserId'}]
+    get:
+      operationId: listUserSpaceMemberships
+      summary: 系统管理员查看某成员在各空间的授权
+      description: 只返回仍有授权的空间；owned 为 true 表示空间由该成员创建，其读取与维护权限不可收回。
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 该成员的授权分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UserSpaceMembershipPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: replaceUserSpaceMemberships
+      summary: 系统管理员一次提交成员的全部空间授权
+      description: 全量覆盖：未列出的空间撤销授权，两个权限都为 false 的条目等价于撤销。成员自己创建的空间始终保留读取与维护权限。整个提交在同一事务内生效。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SpaceMembershipsInput'}}}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 生效后的授权分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UserSpaceMembershipPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /answer-templates:
+    get:
+      operationId: listAnswerTemplates
+      summary: 系统管理员读取回答模板列表
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses: {'200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 模板分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplatePage'}}}]}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+    post:
+      operationId: createAnswerTemplate
+      summary: 系统管理员新建回答模板
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnswerTemplateInput'}}}}
+      responses: {'201': {description: 已创建, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplate'}}}]}}}}, '400': {$ref: '#/components/responses/IdempotentBadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '409': {$ref: '#/components/responses/IdempotentStateConflict'}, '422': {$ref: '#/components/responses/Unprocessable'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /answer-templates/{templateId}:
+    parameters: [{name: templateId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: getAnswerTemplate
+      summary: 系统管理员读取单个回答模板
+      responses: {'200': {description: 模板及版本, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplate'}}}]}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '400': {$ref: '#/components/responses/BadRequest'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+    put:
+      operationId: putAnswerTemplate
+      summary: 系统管理员全量更新回答模板
+      description: 停用后不参与解析，助手与全局配置回退到其他模板；模板不得覆盖权限、引用和政策有效性规则。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnswerTemplateInput'}}}}
+      responses: {'200': {description: 已更新, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplate'}}}]}}}}, '400': {$ref: '#/components/responses/IdempotentBadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/IdempotentStateConflict'}, '412': {$ref: '#/components/responses/PreconditionFailed'}, '422': {$ref: '#/components/responses/Unprocessable'}, '428': {$ref: '#/components/responses/PreconditionRequired'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+    delete:
+      operationId: deleteAnswerTemplate
+      summary: 系统管理员删除未被引用的回答模板
+      description: 全局模板或被助手引用的模板不可删除，返回 409。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}]
+      responses: {'204': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已删除}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '412': {$ref: '#/components/responses/PreconditionFailed'}, '428': {$ref: '#/components/responses/PreconditionRequired'}, '400': {$ref: '#/components/responses/BadRequest'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /answer-templates/generations:
+    post:
+      operationId: startAnswerTemplateGeneration
+      summary: 系统管理员用 AI 生成一份回答模板正文
+      description: 异步任务：立即返回 QUEUED 记录，前端轮询详情；结果只回到生成记录，不直接修改模板。需要全局默认模型或显式指定可用模型，否则 409。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnswerTemplateGenerationInput'}}}}
+      responses: {'202': {description: 已受理, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplateGeneration'}}}]}}}}, '400': {$ref: '#/components/responses/IdempotentBadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/IdempotentStateConflict'}, '422': {$ref: '#/components/responses/Unprocessable'}, '429': {$ref: '#/components/responses/RateLimited'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /answer-templates/generations/{generationId}:
+    parameters: [{name: generationId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: getAnswerTemplateGeneration
+      summary: 系统管理员查询 AI 生成任务的状态与结果
+      responses: {'200': {description: 生成任务, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AnswerTemplateGeneration'}}}]}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '400': {$ref: '#/components/responses/BadRequest'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /assistants:
+    get:
+      operationId: listAssistants
+      summary: 列出用户可用的助手，或供系统管理员管理助手
+      description: 默认按当前用户的空间读取权限过滤绑定。管理模式仅限系统管理员，返回全量绑定，包含已停用和未绑定空间的助手。
+      parameters:
+        - {name: management, in: query, schema: {type: boolean, default: false}}
+        - {name: q, in: query, description: 按助手名称包含匹配；省略或为空时不筛选。, schema: {type: string, maxLength: 200}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 助手列表, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {type: object, required: [items, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/AssistantView'}}, total: {$ref: '#/components/schemas/Count'}}}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createAssistant
+      summary: 系统管理员创建助手，并可配置检索绑定和独立模板
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/NewAssistant'}}}}
+      responses: {'201': {description: 已创建, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AssistantAdmin'}}}]}}}}, '400': {$ref: '#/components/responses/IdempotentBadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '409': {$ref: '#/components/responses/IdempotencyConflict'}, '422': {$ref: '#/components/responses/Unprocessable'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /assistants/{assistantId}:
+    parameters: [{name: assistantId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: getAssistantConfig
+      summary: 系统管理员读取助手及全量绑定和模板
+      responses: {'200': {$ref: '#/components/responses/AssistantConfig'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '400': {$ref: '#/components/responses/BadRequest'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '500': {$ref: '#/components/responses/InternalError'}}
+    put:
+      operationId: putAssistant
+      summary: 系统管理员全量更新已有助手的检索绑定与回答模板
+      description: 每个空间只能绑定一次；绑定不能扩大用户读取权限。template 为 null 时继承全局模板；模板不能覆盖授权、引用和政策有效性规则。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantConfig'}}}}
+      responses:
+        '200': {$ref: '#/components/responses/AssistantConfig'}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /conversations:
+    get:
+      operationId: listConversations
+      summary: 列出当前用户创建的会话
+      parameters:
+        - {name: archived, in: query, description: 省略或为 false 时只返回活跃会话，为 true 时只返回已归档会话。, schema: {type: boolean, default: false}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 会话分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ConversationPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createConversation
+      summary: 为当前用户创建指定助手的会话
+      description: 同一用户以同一幂等键提交相同内容时，返回原会话和 Location；同键不同请求返回 409。缺少幂等键返回 400。
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                assistantId: {$ref: '#/components/schemas/Id', description: 省略时选择可用助手。}
+                title: {type: [string, 'null'], maxLength: 240}
+      responses:
+        '201': {description: 会话已创建或幂等回放, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Conversation'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /conversations/{conversationId}:
+    parameters: [{$ref: '#/components/parameters/ConversationId'}]
+    get:
+      operationId: getConversation
+      summary: 读取当前用户的单个会话
+      description: 会话列表分页后，客户端用它补齐不在当前页的会话（标题、归属助手与归档状态）。已删除或非本人会话返回 404。
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 会话, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Conversation'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteConversation
+      summary: 软删除当前用户的会话
+      description: 删除后列表、会话历史、问题轮询、引用预览和原件下载均不可再访问。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      responses:
+        '204': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已删除}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /conversations/{conversationId}/archive:
+    parameters: [{$ref: '#/components/parameters/ConversationId'}]
+    put:
+      operationId: archiveConversation
+      summary: 归档或恢复当前用户的会话
+      description: 归档后仍可查看历史、轮询已有问题和读取有权限的引用，恢复前不能提交新问题。
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [archived]
+              properties:
+                archived: {type: boolean}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 会话归档状态, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Conversation'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /conversations/{conversationId}/messages:
+    parameters: [{$ref: '#/components/parameters/ConversationId'}]
+    get:
+      operationId: listConversationMessages
+      summary: 按时间正序读取当前用户的会话消息
+      description: 每次读取重新按证据依赖、当前权限和原发布代次过滤答案段落；目前生成任务只使用当前提问与检索证据，不把历史消息送入模型。已归档会话可读取，已删除或非本人会话返回 404。
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已按权限过滤的消息分页, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/MessagePage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /conversations/{conversationId}/questions:
+    parameters: [{$ref: '#/components/parameters/ConversationId'}]
+    post:
+      operationId: submitQuestion
+      summary: 异步提交问题，返回 ID 后轮询
+      description: 若提供 requestedSpaceIds，受理前校验每个指定空间当前可读且已发布，不满足返回 404。worker 再核对助手绑定、读取权限和发布状态，显式范围不再满足时异步失败 CONTEXT_CHANGED。省略范围时取三者交集。可用 modelId 指定本次提问模型，首次受理时模型不可选返回 422。省略 modelId 时由 worker 读取全局默认配置。会话已归档时返回 409 STATE_CONFLICT，恢复后才可提交。同键同内容回放原受理结果，不消耗新增提问配额。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionInput'}}}}
+      responses:
+        '202': {description: 已排队，Location 指向问题状态接口, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/QuestionAccepted'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotentStateConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /questions:
+    post:
+      operationId: submitFirstQuestion
+      summary: 首个问题自动建立会话并提炼标题，客户端无需先建空会话
+      description: 受理时在同一事务内创建会话、写入问题并入队，返回新会话与问题。会话标题由问题提炼；问题过短时在首轮回答完成后改用回答上下文；超过 30 个字符截断并加省略号。assistantId 省略时使用任一启用助手。同键同内容回放原会话与原问题，不重复建会话；缺少幂等键返回 400。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FirstQuestionInput'}}}}
+      responses:
+        '202': {description: 已排队，Location 指向问题状态接口, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ConversationQuestionAccepted'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /questions/{questionId}:
+    parameters: [{name: questionId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: getQuestion
+      summary: 轮询当前用户问题的状态和经过授权过滤的答案
+      description: 生成期间若撤回或授权变化，丢弃受影响的生成结果并提示重新提问；历史结果读取时屏蔽依赖任一不可用证据的整段，不返回原文或来源。会话已删除或非本人时返回 404。
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 当前任务状态, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Question'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /questions/{questionId}/stream:
+    parameters: [{name: questionId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    get:
+      operationId: streamQuestionAnswer
+      summary: 订阅回答增量（Server-Sent Events），让正在生成的回答逐字显示
+      description: 事件依次为 delta（一段新增文本）、done（问题最终状态，客户端随后读取 GET /questions/{questionId} 获取段落、引用与有效性）。生成出错时发 error，等待过久发 timeout，两种情况下客户端回退轮询。增量只在进程内保留短时缓冲，进程重启或通道过期后同样回退轮询；最终回答始终以问题状态接口为准。问题已结束或不属于当前用户时，已结束直接回 done，否则返回 404。每 15 秒写一行注释心跳。
+      responses:
+        '200':
+          description: text/event-stream；delta/done/error/timeout 四种事件。
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {text/event-stream: {schema: {type: string}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /citations/{citationId}:
+    parameters: [{$ref: '#/components/parameters/CitationId'}]
+    get:
+      operationId: getCitationPreview
+      summary: 按历史引用的原发布代次校验会话归属、权限与证据后预览
+      description: 不以新版、当前发布指针或维护权限兜底；原引用不可用或会话已删除统一返回 404。
+      responses:
+        '200':
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          description: CHUNK 返回冻结的片段，sourceLocation 在可定位时出现。没有冻结片段的历史引用返回 DOCUMENT 及同版本正文预览。
+          content:
+            application/json:
+              schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CitationPreview'}}}]}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /citations/{citationId}/content:
+    parameters: [{$ref: '#/components/parameters/CitationId'}]
+    get:
+      operationId: downloadCitationContent
+      summary: 重新按引用的原发布代次单独鉴权，成功才返回原件字节
+      description: 会话已删除时返回 404。
+      responses:
+        '200': {$ref: '#/components/responses/DocumentBytes'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /usage/ranking:
+    get:
+      operationId: getUsageRanking
+      summary: 周期内按用户汇总的用量排行
+      description: 仅系统管理员可访问；按提问数倒序，口径与单用户用量一致。
+      parameters:
+        - {name: period, in: query, required: true, schema: {$ref: '#/components/schemas/UsagePeriod'}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 用户排行, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UsageRankingPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /usage/questions:
+    get:
+      operationId: getUsageQuestions
+      summary: 周期内提问明细，供对账
+      description: 默认查询本人，系统管理员可选指定用户或全员。最多返回 200 条。
+      parameters:
+        - {name: period, in: query, required: true, schema: {$ref: '#/components/schemas/UsagePeriod'}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - {name: userId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: allUsers, in: query, description: 仅管理员可设为 true，且不能同时传 userId。, schema: {type: boolean, default: false}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 提问明细, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UsageQuestionPage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /usage/spaces:
+    get:
+      operationId: getUsageSpaces
+      summary: 周期内文档类指标（按空间统计）
+      description: 仅系统管理员可访问；按答案证据依赖统计每个空间的被引用次数与覆盖提问数，问答用量仍按用户归属。
+      parameters:
+        - {name: period, in: query, required: true, schema: {$ref: '#/components/schemas/UsagePeriod'}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 空间用量, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UsageSpacePage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /usage/series:
+    get:
+      operationId: getUsageSeries
+      summary: 按北京时间分桶的提问与失败趋势
+      description: DAY 按小时分桶，WEEK 按日、MONTH 按日；只统计提问与失败，不改写用量汇总口径。
+      parameters:
+        - {name: period, in: query, required: true, schema: {$ref: '#/components/schemas/UsagePeriod'}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - {name: userId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: allUsers, in: query, description: 仅管理员可设为 true，且不能同时传 userId。, schema: {type: boolean, default: false}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 分桶趋势, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/UsageSeries'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /usage:
+    get:
+      operationId: getUsage
+      summary: 按发起用户查询自然周期用量
+      description: 默认只查本人，系统管理员可选指定用户或全员。北京时间自然周从周一开始；date 选定所在周期。重送不重复计数；未知 Tokens 单列。
+      parameters:
+        - {name: period, in: query, required: true, schema: {$ref: '#/components/schemas/UsagePeriod'}}
+        - {name: date, in: query, required: true, schema: {type: string, format: date}}
+        - {name: userId, in: query, schema: {$ref: '#/components/schemas/Id'}}
+        - {name: allUsers, in: query, description: 仅管理员可设为 true，且不能同时传 userId。, schema: {type: boolean, default: false}}
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 所选范围的周期汇总, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Usage'}}}]}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /model-configs:
+    get:
+      operationId: listModelConfigs
+      summary: 全局模型配置列表（多条）
+      description: 仅系统管理员；按创建顺序返回模型配置，支持 limit/offset 分页。响应包含协议、网关地址、模型 ID 与凭据引用元数据，不返回任何密钥原文。
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 配置列表, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ModelConfigPage'}}}]}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createModelConfig
+      summary: 新增模型配置
+      description: 仅系统管理员；别名唯一，重复返回 409。需要幂等键。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelConfigInput'}}}}
+      responses:
+        '201': {description: 已创建, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Location: {$ref: '#/components/headers/Location'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ModelConfig'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotentStateConflict'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /model-configs/options:
+    get:
+      operationId: listModelOptions
+      summary: 查询当前可供提问选择的模型
+      description: 已登录用户可访问。仅列出已启用且网关地址和模型 ID 非空的配置，返回标识、别名和默认标志。
+      responses:
+        '200':
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          description: 模型选项
+          content:
+            application/json:
+              schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ModelOptionPage'}}}]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /model-configs/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}]
+    put:
+      operationId: updateModelConfig
+      summary: 编辑模型配置
+      description: 仅系统管理员；按 If-Match 做乐观并发（缺失 428、不匹配 412）。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelConfigInput'}}}}
+      responses:
+        '200': {description: 已更新, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/ModelConfig'}}}]}}}}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '409': {$ref: '#/components/responses/IdempotentStateConflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '415': {$ref: '#/components/responses/UnsupportedMedia'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteModelConfig
+      summary: 删除模型配置
+      description: 仅系统管理员；是全局默认指针时 409（先切换默认）。
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '204': {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 已删除}
+        '400': {$ref: '#/components/responses/IdempotentBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/WriteForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotentStateConflict'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /settings/global:
+    get:
+      operationId: getGlobalSettings
+      summary: 系统管理员读取默认模型、全局模板及问答设置
+      responses:
+        '200': {$ref: '#/components/responses/GlobalSettings'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: putGlobalSettings
+      summary: 系统管理员全量设置默认模型指针、全局模板及问答设置
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GlobalSettingsInput'}}}}
+      responses: {'200': {$ref: '#/components/responses/GlobalSettings'}, '400': {$ref: '#/components/responses/IdempotentBadRequest'}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/WriteForbidden'}, '409': {$ref: '#/components/responses/IdempotencyConflict'}, '412': {$ref: '#/components/responses/PreconditionFailed'}, '422': {$ref: '#/components/responses/Unprocessable'}, '428': {$ref: '#/components/responses/PreconditionRequired'}, '406': {$ref: '#/components/responses/NotAcceptable'}, '415': {$ref: '#/components/responses/UnsupportedMedia'}, '500': {$ref: '#/components/responses/InternalError'}}
+  /cleaning/batches:
+    post:
+      operationId: uploadCleaningBatch
+      summary: 上传原始数据集并受理清洗批次（系统管理员）
+      description: multipart 提交；`paths` 与 `files` 按下标一一对应，用于还原文件夹层级；`archive` 只接受 .zip。清洗异步执行，返回批次后轮询批次详情。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files: {type: array, items: {type: string, format: binary}}
+                paths: {type: array, items: {type: string}}
+                archive: {type: string, format: binary}
+                name: {type: string, maxLength: 200}
+                targetSpaceId: {type: string, format: uuid}
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 3, maxLength: 255}}
+      responses:
+        '202':
+          description: 已受理，Location 指向批次详情
+          headers: {Location: {schema: {type: string}}, X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CleaningBatch'}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+    get:
+      operationId: listCleaningBatches
+      summary: 清洗批次列表（系统管理员）
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [QUEUED, EXTRACTING, SCORING, READY, PARTIAL, FAILED]}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: 按创建时间倒序的批次页
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {allOf: [{$ref: '#/components/schemas/Page'}, {properties: {items: {type: array, items: {$ref: '#/components/schemas/CleaningBatch'}}}}]}}}]}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /cleaning/batches/{batchId}:
+    get:
+      operationId: getCleaningBatch
+      summary: 清洗批次详情与来源文件结果（系统管理员）
+      parameters:
+        - {name: batchId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 批次详情
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CleaningBatchDetail'}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /cleaning/batches/{batchId}/rescore:
+    post:
+      operationId: rescoreCleaningBatch
+      summary: 对仅规则分的条目重新排队打分（系统管理员）
+      parameters:
+        - {name: batchId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 重新入队的条目数
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {type: object, required: [enqueued], properties: {enqueued: {type: integer, minimum: 0}}}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /cleaning/items:
+    get:
+      operationId: listCleaningItems
+      summary: 清洗草稿箱列表（系统管理员）
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, PROMOTED]}}
+        - {name: batchId, in: query, schema: {type: string, format: uuid}}
+        - {name: targetSpaceId, in: query, schema: {type: string, format: uuid}}
+        - {name: minScore, in: query, schema: {type: integer, minimum: 0, maximum: 100}}
+        - {name: q, in: query, schema: {type: string, maxLength: 200}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: 按总分与创建时间倒序的条目页
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {allOf: [{$ref: '#/components/schemas/Page'}, {properties: {items: {type: array, items: {$ref: '#/components/schemas/CleaningItem'}}}}]}}}]}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /cleaning/items/{itemId}:
+    get:
+      operationId: getCleaningItem
+      summary: 清洗条目详情（系统管理员）
+      parameters:
+        - {name: itemId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: 含正文、清洗前摘录与评分明细
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CleaningItemDetail'}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /cleaning/items/review:
+    post:
+      operationId: reviewCleaningItems
+      summary: 批量通过或驳回清洗条目（系统管理员）
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 3, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CleaningReviewInput'}
+      responses:
+        '200':
+          description: 实际更新的条目与新状态
+          headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CleaningReviewResult'}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /cleaning/promotions:
+    post:
+      operationId: promoteCleaningItems
+      summary: 把已通过的条目流转为目标空间草稿里的文档版本（系统管理员）
+      description: 生成 Markdown 文档版本并追加进空间草稿；仍需在发布管理提交变更审核，未审核前对普通用户不可见。
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 3, maxLength: 255}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CleaningPromotionInput'}
+      responses:
+        '201':
+          description: 生成的文档版本与更新后的草稿版本
+          headers: {Location: {schema: {type: string}}, X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+          content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/CleaningPromotionResult'}}}]}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+
+components:
+  securitySchemes:
+    SessionCookie: {type: apiKey, in: cookie, name: QA_SESSION, description: '本地账号或 OIDC 登录建立的服务端会话。Cookie 使用 HttpOnly 与 SameSite=Lax，HTTPS 部署需显式启用 COOKIE_SECURE。'}
+  parameters:
+    Csrf: {name: X-CSRF-TOKEN, in: header, required: true, description: 通过 CSRF 接口取得的请求令牌，发送时须保留对应 XSRF-TOKEN Cookie。, schema: {type: string, minLength: 1}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, description: '不透明字符串。服务端按原始头值匹配，每次新操作使用新键，重试保持该值不变。', schema: {type: string, minLength: 3, maxLength: 255}, example: a82370d6-1be8-4f28-8b6d-4b6d458c1375}
+    NonBlankKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, pattern: '\S'}}
+    IfMatch: {name: If-Match, in: header, required: true, description: '原样发送响应中的数字版本 ETag。服务端也接受单个未加引号的数字，不接受弱 ETag、通配符或列表。缺失返回 428 IF_MATCH_REQUIRED，格式非法或版本不匹配返回 412 ETAG_MISMATCH。', schema: {type: string}, example: '"7"'}
+    SpaceId: {name: spaceId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    Limit: {name: limit, in: query, required: false, description: 单页条数，取值 1–200；省略时返回全部记录。与 offset 一起使用时，响应中的 total 是筛选后的总数。,
+      schema: {type: integer, minimum: 1, maximum: 200}}
+    Offset: {name: offset, in: query, required: false, description: 跳过的记录数，默认 0；可超出 total，此时 items 为空。, schema: {type: integer, minimum: 0, default: 0}}
+    UserId: {name: userId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    DocumentVersionId: {name: documentVersionId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    RequestId: {name: requestId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    ConversationId: {name: conversationId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+    CitationId: {name: citationId, in: path, required: true, schema: {$ref: '#/components/schemas/Id'}}
+  headers:
+    ResponseRequestId: {required: true, description: 本次 HTTP 请求的排查标识。如响应有 JSON 正文，与正文顶层 requestId 相同。, schema: {type: string, minLength: 1}}
+    ETag: {required: true, description: 带引号强 ETag，原样用于相应的 If-Match。, schema: {type: string}}
+    Location: {required: true, description: 同源的 API 资源或轮询路径，包含 /api/v1 前缀。, schema: {type: string, format: uri-reference}}
+  responses:
+    Draft: {description: 当前草稿和版本, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/Draft'}}}]}}}}
+    CreatedPublishRequest: {description: 申请已提交, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}, Location: {$ref: '#/components/headers/Location'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/PublishRequest'}}}]}}}}
+    PublishRequest: {description: 审核申请和版本, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/PublishRequest'}}}]}}}}
+    DocumentPreview: {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 纯文本预览与文档元信息，可无可提取文本, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/DocumentPreview'}}}]}}}}
+    DraftDocumentPreview: {headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}, description: 草稿内文档的纯文本预览, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/DraftDocumentPreview'}}}]}}}}
+    DocumentBytes: {description: 原件字节，不提供公开 URL, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Content-Disposition: {required: true, description: 附件下载及安全编码后的文件名。, schema: {type: string}}}, content: {application/octet-stream: {}}}
+    AssistantConfig: {description: 助手全量配置及版本, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/AssistantAdmin'}}}]}}}}
+    GlobalSettings: {description: 生效的全局配置及版本，不返回任何凭据原值, headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, ETag: {$ref: '#/components/headers/ETag'}}, content: {application/json: {schema: {allOf: [{$ref: '#/components/schemas/ApiSuccess'}, {properties: {data: {$ref: '#/components/schemas/GlobalSettings'}}}]}}}}
+    BadRequest:
+      description: 请求无效（INVALID_REQUEST）或游标失效（INVALID_CURSOR，预留）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 400}, code: {enum: [INVALID_REQUEST, INVALID_CURSOR]}}
+    IdempotentBadRequest:
+      description: 请求无效（INVALID_REQUEST），或缺少/非法的幂等键（IDEMPOTENCY_KEY_REQUIRED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 400}, code: {enum: [INVALID_REQUEST, IDEMPOTENCY_KEY_REQUIRED]}}
+    Unauthorized:
+      description: 未登录或会话过期（UNAUTHENTICATED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 401}, code: {const: UNAUTHENTICATED}}
+    InvalidCredentials:
+      description: 本地登录凭据错误（INVALID_CREDENTIALS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 401}, code: {const: INVALID_CREDENTIALS}}
+    InvalidCaptcha:
+      description: 图形验证码缺失、过期、已用过或字符不匹配（INVALID_CAPTCHA）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 400}, code: {const: INVALID_CAPTCHA}}
+    Forbidden:
+      description: 缺少操作权限（FORBIDDEN）或账号停用（ACCOUNT_DISABLED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 403}, code: {enum: [FORBIDDEN, ACCOUNT_DISABLED]}}
+    WriteForbidden:
+      description: 缺少操作权限（FORBIDDEN）、账号停用（ACCOUNT_DISABLED）或 CSRF 令牌缺失/不匹配（CSRF_INVALID）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 403}, code: {enum: [FORBIDDEN, ACCOUNT_DISABLED, CSRF_INVALID]}}
+    AuthWriteForbidden:
+      description: CSRF 令牌缺失/不匹配（CSRF_INVALID）或账号停用（ACCOUNT_DISABLED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 403}, code: {enum: [CSRF_INVALID, ACCOUNT_DISABLED]}}
+    NotFound:
+      description: 资源不存在或不可访问（RESOURCE_NOT_FOUND），不区分原因。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 404}, code: {const: RESOURCE_NOT_FOUND}}
+    MethodNotAllowed:
+      description: 请求方法不受目标路由支持（METHOD_NOT_ALLOWED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Allow: {description: 目标路由允许的方法。, schema: {type: string}}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 405}, code: {const: METHOD_NOT_ALLOWED}}
+    NotAcceptable:
+      description: Accept 不接受目标操作的响应媒体类型（NOT_ACCEPTABLE）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 406}, code: {const: NOT_ACCEPTABLE}}
+    Conflict:
+      description: 当前资源状态不允许该操作（STATE_CONFLICT）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {const: STATE_CONFLICT}}
+    UsernameConflict:
+      description: 用户名重复（USERNAME_TAKEN）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {const: USERNAME_TAKEN}}
+    RetryConflict:
+      description: 文档当前不可重试（DOCUMENT_NOT_RETRYABLE）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {const: DOCUMENT_NOT_RETRYABLE}}
+    IdempotencyConflict:
+      description: 同键异输入（IDEMPOTENCY_KEY_REUSED）或同键请求正在处理（IDEMPOTENCY_IN_PROGRESS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {enum: [IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS]}}
+    IdempotentStateConflict:
+      description: 资源状态冲突（STATE_CONFLICT）、同键异输入（IDEMPOTENCY_KEY_REUSED）或同键请求正在处理（IDEMPOTENCY_IN_PROGRESS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {enum: [STATE_CONFLICT, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS]}}
+    SubmissionConflict:
+      description: 仍有待处理申请（PUBLISH_REQUEST_OPEN）或幂等冲突（IDEMPOTENCY_KEY_REUSED / IDEMPOTENCY_IN_PROGRESS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {enum: [PUBLISH_REQUEST_OPEN, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS]}}
+    PublicationConflict:
+      description: 申请已终结（STATE_CONFLICT）、发布指针已变化（PUBLICATION_CHANGED）或幂等冲突（IDEMPOTENCY_KEY_REUSED / IDEMPOTENCY_IN_PROGRESS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {enum: [STATE_CONFLICT, PUBLICATION_CHANGED, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS]}}
+    WithdrawalConflict:
+      description: 当前无发布（STATE_CONFLICT）、发布指针已变化（PUBLICATION_CHANGED）或幂等冲突（IDEMPOTENCY_KEY_REUSED / IDEMPOTENCY_IN_PROGRESS）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 409}, code: {enum: [STATE_CONFLICT, PUBLICATION_CHANGED, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_IN_PROGRESS]}}
+    PreconditionFailed:
+      description: If-Match 格式非法或与目标当前版本不匹配（ETAG_MISMATCH）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 412}, code: {const: ETAG_MISMATCH}}
+    PayloadTooLarge:
+      description: 上传请求超过文件数量、单文件或整批体积限制（PAYLOAD_TOO_LARGE）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 413}, code: {const: PAYLOAD_TOO_LARGE}}
+    UnsupportedMedia:
+      description: 请求 Content-Type 不受支持（UNSUPPORTED_MEDIA_TYPE）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 415}, code: {const: UNSUPPORTED_MEDIA_TYPE}}
+    Unprocessable:
+      description: 业务输入无效（VALIDATION_FAILED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 422}, code: {const: VALIDATION_FAILED}}
+    ImportUnprocessable:
+      description: 导入业务输入无效（VALIDATION_FAILED）或文件扩展名不支持（UNSUPPORTED_MEDIA_TYPE）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 422}, code: {enum: [VALIDATION_FAILED, UNSUPPORTED_MEDIA_TYPE]}}
+    PreconditionRequired:
+      description: 缺少 If-Match（IF_MATCH_REQUIRED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 428}, code: {const: IF_MATCH_REQUIRED}}
+    TooManyRequests:
+      description: 登录失败次数过多，稍后再试（RATE_LIMITED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Retry-After: {description: 若返回，表示重试前至少等待的秒数。, schema: {type: integer, minimum: 1}}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 429}, code: {const: RATE_LIMITED}}
+    RateLimited:
+      description: 超过请求速率限制（RATE_LIMITED）。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Retry-After: {description: 允许重试前至少等待的秒数。, schema: {type: integer, minimum: 1}}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 429}, code: {const: RATE_LIMITED}}
+    InternalError:
+      description: 未处理的服务端异常（INTERNAL_ERROR），不披露内部细节。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 500}, code: {const: INTERNAL_ERROR}}
+    ServiceUnavailable:
+      description: 权威授权无法校验（AUTH_VALIDATION_UNAVAILABLE）或其他依赖不可用（DEPENDENCY_UNAVAILABLE），不返回部分受保护资源。任务容量不足时附重试间隔。
+      headers: {X-Request-Id: {$ref: '#/components/headers/ResponseRequestId'}, Retry-After: {description: 重试前至少等待的秒数。, schema: {type: integer, minimum: 1}}}
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - properties: {status: {const: 503}, code: {enum: [AUTH_VALIDATION_UNAVAILABLE, DEPENDENCY_UNAVAILABLE]}}
+  schemas:
+
+    CleaningScoreDetail:
+      type: object
+      required: [length, completeness, noise, information, structure]
+      properties:
+        length: {type: integer, minimum: 0, maximum: 20}
+        completeness: {type: integer, minimum: 0, maximum: 20}
+        noise: {type: integer, minimum: 0, maximum: 20}
+        information: {type: integer, minimum: 0, maximum: 20}
+        structure: {type: integer, minimum: 0, maximum: 20}
+    CleaningBatch:
+      type: object
+      required: [batchId, name, status, modelScoring, fileCount, skippedCount, failedFileCount, itemCount, duplicateCount, createdAt]
+      properties:
+        batchId: {type: string, format: uuid}
+        name: {type: string, maxLength: 200}
+        targetSpaceId: {type: [string, 'null'], format: uuid}
+        status: {type: string, enum: [QUEUED, EXTRACTING, SCORING, READY, PARTIAL, FAILED]}
+        modelScoring: {type: boolean}
+        fileCount: {type: integer, minimum: 0}
+        skippedCount: {type: integer, minimum: 0}
+        failedFileCount: {type: integer, minimum: 0}
+        itemCount: {type: integer, minimum: 0}
+        duplicateCount: {type: integer, minimum: 0}
+        averageScore: {type: [integer, 'null'], minimum: 0, maximum: 100}
+        errorCode: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+    CleaningSourceFile:
+      type: object
+      required: [sourceFileId, relativePath, displayName, sizeBytes, state, recordCount]
+      properties:
+        sourceFileId: {type: string, format: uuid}
+        relativePath: {type: string}
+        displayName: {type: string}
+        sizeBytes: {type: integer, minimum: 0}
+        state: {type: string, enum: [PENDING, READY, FAILED]}
+        recordCount: {type: integer, minimum: 0}
+        errorCode: {type: [string, 'null']}
+    CleaningBatchDetail:
+      allOf:
+        - {$ref: '#/components/schemas/CleaningBatch'}
+        - type: object
+          required: [sourceFiles]
+          properties:
+            sourceFiles: {type: array, items: {$ref: '#/components/schemas/CleaningSourceFile'}}
+    CleaningItem:
+      type: object
+      required: [itemId, batchId, batchName, title, excerpt, ruleScore, totalScore, scoreState, status, createdAt]
+      properties:
+        itemId: {type: string, format: uuid}
+        batchId: {type: string, format: uuid}
+        batchName: {type: string}
+        title: {type: string, maxLength: 240}
+        excerpt: {type: string}
+        sourcePath: {type: [string, 'null']}
+        ruleScore: {type: integer, minimum: 0, maximum: 100}
+        modelScore: {type: [integer, 'null'], minimum: 0, maximum: 100}
+        totalScore: {type: integer, minimum: 0, maximum: 100}
+        scoreState: {type: string, enum: [PENDING, SCORED, UNAVAILABLE]}
+        modelReason: {type: [string, 'null']}
+        status: {type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, PROMOTED]}
+        targetSpaceId: {type: [string, 'null'], format: uuid}
+        targetSpaceName: {type: [string, 'null']}
+        promotedDocumentVersionId: {type: [string, 'null'], format: uuid}
+        createdAt: {type: string, format: date-time}
+        reviewedAt: {type: [string, 'null'], format: date-time}
+        reviewReason: {type: [string, 'null']}
+    CleaningItemDetail:
+      allOf:
+        - {$ref: '#/components/schemas/CleaningItem'}
+        - type: object
+          required: [body, scoreDetail]
+          properties:
+            body: {type: string}
+            rawExcerpt: {type: [string, 'null']}
+            scoreDetail: {$ref: '#/components/schemas/CleaningScoreDetail'}
+            reviewedBy: {type: [string, 'null']}
+            promotedSpaceId: {type: [string, 'null'], format: uuid}
+            promotedAt: {type: [string, 'null'], format: date-time}
+    CleaningReviewInput:
+      type: object
+      required: [itemIds, decision]
+      properties:
+        itemIds: {type: array, minItems: 1, maxItems: 200, items: {type: string, format: uuid}}
+        decision: {type: string, enum: [APPROVE, REJECT]}
+        reason: {type: string, maxLength: 2000, description: 驳回时必填}
+    CleaningReviewResult:
+      type: object
+      required: [reviewed, items]
+      properties:
+        reviewed: {type: integer, minimum: 0}
+        items:
+          type: array
+          items:
+            type: object
+            required: [itemId, status]
+            properties:
+              itemId: {type: string, format: uuid}
+              status: {type: string, enum: [APPROVED, REJECTED]}
+    CleaningPromotionInput:
+      type: object
+      required: [itemIds, spaceId]
+      properties:
+        itemIds: {type: array, minItems: 1, maxItems: 200, items: {type: string, format: uuid}}
+        spaceId: {type: string, format: uuid}
+        documentName: {type: string, maxLength: 180}
+        policyState: {type: string, enum: [EFFECTIVE, EXPIRED, UNKNOWN], default: EFFECTIVE}
+        effectiveFrom: {type: [string, 'null'], format: date}
+        effectiveUntil: {type: [string, 'null'], format: date}
+        reason: {type: string, maxLength: 2000}
+    CleaningPromotionResult:
+      type: object
+      required: [documentVersionId, documentName, versionNumber, draftRevision, promoted]
+      properties:
+        documentVersionId: {type: string, format: uuid}
+        documentName: {type: string}
+        versionNumber: {type: integer, minimum: 1}
+        draftRevision: {type: integer, minimum: 0}
+        promoted: {type: integer, minimum: 0}
+    ApiSuccess:
+      type: object
+      additionalProperties: false
+      required: [code, data, requestId]
+      properties:
+        code: {type: string, const: OK}
+        data: {description: 各操作原有业务数据，具体结构由该操作的响应定义。}
+        requestId: {type: string, minLength: 1, description: 与 X-Request-Id 响应头相同。}
+    CitationPreview:
+      type: object
+      required: [citationId, name, previewText, documentVersionId, versionNumber, validity, evidenceGranularity]
+      properties:
+        citationId: {type: string, format: uuid}
+        name: {type: string}
+        previewText: {type: string}
+        sourceLocation: {type: [string, 'null']}
+        documentVersionId: {type: string, format: uuid}
+        versionNumber: {type: integer}
+        validity: {type: string, enum: [EFFECTIVE, EXPIRED, UNCERTAIN]}
+        evidenceGranularity: {type: string, enum: [CHUNK, DOCUMENT]}
+    ModelConfig: {type: object, required: [id, alias, credentialRef, enabled, revision, isDefault, protocol, baseUrl, modelName], properties: {id: {$ref: '#/components/schemas/Id'}, alias: {type: string, description: 模型别名，唯一。}, credentialRef: {type: string, description: 服务端登记的不透明凭据引用。}, enabled: {type: boolean, description: 停用后不可被选为默认模型。}, revision: {$ref: '#/components/schemas/Count'}, isDefault: {type: boolean, description: 是否为全局默认模型。}, protocol: {type: string, enum: [openai_compatible, anthropic], description: openai_compatible 覆盖 OpenAI/DeepSeek/Kimi/智谱/通义/豆包/百度 v2/混元/Gemini 兼容层。}, baseUrl: {type: string, description: 网关根地址。}, modelName: {type: string, description: 该网关的模型 ID（请求体 model 字段）。}}}
+    ModelConfigInput: {type: object, required: [alias, credentialRef, baseUrl, modelName], additionalProperties: false, properties: {alias: {type: string, minLength: 1, maxLength: 120}, credentialRef: {type: string, minLength: 1, description: 服务端配置键的引用标识，禁止密钥原文。}, enabled: {type: boolean, default: false, description: 停用后不可作为默认模型。}, protocol: {type: string, enum: [openai_compatible, anthropic], default: openai_compatible, description: openai_compatible 覆盖主流 OpenAI 兼容网关；anthropic 为原生 Messages 协议。}, baseUrl: {type: string, format: uri, description: '无账号密码、查询参数或片段的 HTTPS 网关根地址。OpenAI 兼容协议也支持本机 Magpie 地址 http://127.0.0.1:3425/v1。'}, modelName: {type: string, minLength: 1, maxLength: 120, description: 该网关的模型 ID。}}}
+    ModelOption:
+      type: object
+      required: [id, alias, isDefault]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        alias: {type: string}
+        isDefault: {type: boolean}
+    ModelOptionPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/ModelOption'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    ModelConfigPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/ModelConfig'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    Id: {type: string, format: uuid}
+    Count: {type: integer, minimum: 0}
+    NextCursor: {type: [string, 'null'], minLength: 1, description: 后续游标，末页为 null。}
+    Reason: {type: string, minLength: 1, maxLength: 2000, pattern: '\S'}
+    Problem:
+      type: object
+      description: RFC 9457 问题详情。type 为 about:blank，status 等于 HTTP 状态，业务逻辑按稳定的 code 判断，不解析文案；不得披露隐藏资源信息。
+      required: [type, title, status, code, requestId]
+      properties:
+        type: {type: string, const: 'about:blank'}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code: {type: string, enum: [INVALID_REQUEST, IDEMPOTENCY_KEY_REQUIRED, INVALID_CURSOR, UNAUTHENTICATED, CSRF_INVALID, FORBIDDEN, RESOURCE_NOT_FOUND, STATE_CONFLICT, PUBLISH_REQUEST_OPEN, DOCUMENT_NOT_RETRYABLE, PUBLICATION_CHANGED, IDEMPOTENCY_IN_PROGRESS, ETAG_MISMATCH, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, VALIDATION_FAILED, IDEMPOTENCY_KEY_REUSED, IF_MATCH_REQUIRED, RATE_LIMITED, INVALID_CREDENTIALS, INVALID_CAPTCHA, ACCOUNT_DISABLED, USERNAME_TAKEN, AUTH_VALIDATION_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, METHOD_NOT_ALLOWED, NOT_ACCEPTABLE, INTERNAL_ERROR]}
+        requestId: {type: string, minLength: 1, description: 与 X-Request-Id 响应头相同的排查标识，与审核申请标识无关。}
+        detail: {type: string, description: 可选的安全说明，不用于程序判断。}
+        instance: {type: string, format: uri-reference}
+    Roles: {type: array, minItems: 1, uniqueItems: true, items: {type: string, enum: [USER, SYSTEM_ADMIN]}}
+    LoginProviders: {type: object, required: [items], properties: {items: {type: array, items: {type: object, required: [id, type], properties: {id: {type: string, description: SSO 注册标识，重定向路径为 /oauth2/authorization/<registrationId>。}, type: {type: string, enum: [SSO]}}}}}}
+    LoginCaptcha: {type: object, required: [captchaId, image], properties: {captchaId: {type: string, format: uuid, description: 登录时原样回传，一次有效。}, image: {type: string, description: PNG 图片的 data URL（data:image/png;base64,...），可直接作为 img 的 src。}}}
+    LoginInput: {type: object, required: [username, password, captchaId, captchaCode], additionalProperties: false, properties: {username: {type: string, minLength: 1, maxLength: 64}, password: {type: string, minLength: 1, maxLength: 72}, captchaId: {type: string, format: uuid, description: GET /auth/captcha 返回的 captchaId，一次有效。}, captchaCode: {type: string, minLength: 4, maxLength: 8, description: 验证码字符，服务端不区分大小写。}}}
+    LocalUserInput: {type: object, required: [username, displayName, password], additionalProperties: false, properties: {username: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$'}, displayName: {type: string, minLength: 1, maxLength: 60}, password: {type: string, minLength: 8, maxLength: 72}, roles: {type: array, items: {type: string, enum: [USER, SYSTEM_ADMIN]}, description: 缺省为 USER 角色。}}}
+    CredentialInput: {type: object, required: [password], additionalProperties: false, properties: {password: {type: string, minLength: 8, maxLength: 72}}}
+    UserAccessView: {type: object, required: [userId, displayName, enabled, roles, canCreateSpace, issuer], properties: {userId: {$ref: '#/components/schemas/Id'}, displayName: {type: string}, enabled: {type: boolean}, roles: {$ref: '#/components/schemas/Roles'}, canCreateSpace: {type: boolean}, email: {type: [string, 'null']}, issuer: {type: string, description: 账号来源：local 为本地账号，其余为企业 IdP 标识。}}}
+    CurrentUser: {type: object, required: [userId, displayName, roles, canCreateSpace], properties: {userId: {$ref: '#/components/schemas/Id'}, displayName: {type: string}, roles: {$ref: '#/components/schemas/Roles'}, canCreateSpace: {type: boolean, description: 当前会话是否可创建空间；系统管理员为 true。}}}
+    UserAccess: {type: object, additionalProperties: false, required: [enabled, roles, canCreateSpace], properties: {enabled: {type: boolean}, roles: {$ref: '#/components/schemas/Roles'}, canCreateSpace: {type: boolean, description: 独立的全局创建空间授权，新登记普通用户默认为 false。}}}
+    UserPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/UserAccessView'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    SpaceInput: {type: object, required: [name], additionalProperties: false, properties: {name: {type: string, minLength: 1, maxLength: 120}, department: {type: [string, 'null'], maxLength: 60, description: 所属部门，可空。}}}
+    PublicationState: {type: object, required: [spaceId, epoch, currentPublicationId], properties: {spaceId: {$ref: '#/components/schemas/Id'}, epoch: {$ref: '#/components/schemas/Count'}, currentPublicationId: {type: [string, 'null'], format: uuid}}}
+    Space: {allOf: [{$ref: '#/components/schemas/PublicationState'}, {type: object, required: [name, canRead, canMaintain, department, updatedAt, documentCount, searchableCount], properties: {name: {type: string}, canRead: {type: boolean}, canMaintain: {type: boolean}, documentCount: {$ref: '#/components/schemas/Count'}, searchableCount: {$ref: '#/components/schemas/Count'}, department: {type: [string, 'null'], description: 所属部门，未设置时为 null。}, updatedAt: {type: [string, 'null'], format: date-time}}}]}
+    SpacePage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/Space'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    DraftEntryInput:
+      type: object
+      additionalProperties: false
+      required: [documentVersionId, policyState]
+      properties:
+        documentVersionId: {$ref: '#/components/schemas/Id'}
+        effectiveFrom: {type: [string, 'null'], format: date}
+        effectiveUntil: {type: [string, 'null'], format: date, description: 有效期最后一日（含），两日期均有值时须晚于生效日。}
+        policyState: {type: string, enum: [EFFECTIVE, EXPIRED, UNKNOWN]}
+        replacesDocumentVersionId: {type: [string, 'null'], format: uuid}
+    DraftEntry:
+      type: object
+      additionalProperties: false
+      required: [documentVersionId, policyState]
+      properties:
+        documentVersionId: {$ref: '#/components/schemas/Id'}
+        name: {type: [string, 'null'], description: 文档显示名，内联返回以避免逐条再查。}
+        createdAt: {type: [string, 'null'], format: date-time, description: 导入时间。}
+        parseState: {type: [string, 'null'], enum: [QUEUED, PROCESSING, READY, NO_TEXT, FAILED, null]}
+        sizeBytes: {type: [integer, 'null'], minimum: 0}
+        mediaType: {type: [string, 'null']}
+        versionNumber: {type: [integer, 'null'], minimum: 1}
+        effectiveFrom: {type: [string, 'null'], format: date, description: 生效日（含），null 表示未填写。}
+        effectiveUntil: {type: [string, 'null'], format: date, description: 有效期最后一日（含），null 表示未填写；均非空时须晚于生效日。}
+        policyState: {type: string, enum: [EFFECTIVE, EXPIRED, UNKNOWN], description: 现行、明确失效或有效性待核实。}
+        replacesDocumentVersionId: {$ref: '#/components/schemas/Id'}
+    DraftInput: {type: object, required: [entries], additionalProperties: false, properties: {entries: {type: array, description: 同一文档版本不得重复。, items: {$ref: '#/components/schemas/DraftEntryInput'}}}}
+    Draft: {type: object, required: [spaceId, revision, entries], properties: {spaceId: {$ref: '#/components/schemas/Id'}, revision: {$ref: '#/components/schemas/Count'}, entries: {type: array, items: {$ref: '#/components/schemas/DraftEntry'}}}}
+    DocumentStatus: {type: string, enum: [QUEUED, PROCESSING, READY, NO_TEXT, FAILED]}
+    DraftDocumentPreview: {type: object, required: [documentVersionId, name, parseState], properties: {documentVersionId: {$ref: '#/components/schemas/Id'}, name: {type: string}, parseState: {$ref: '#/components/schemas/DocumentStatus'}, previewText: {type: [string, 'null']}}}
+    DocumentSummary: {type: object, required: [documentVersionId, name, status], properties: {documentVersionId: {$ref: '#/components/schemas/Id'}, name: {type: string}, status: {$ref: '#/components/schemas/DocumentStatus'}}}
+    DocumentMeta: {type: object, required: [sizeBytes, mediaType, versionNumber, errorCode], properties: {sizeBytes: {type: integer, minimum: 0, description: 原始文件字节数。}, mediaType: {type: [string, 'null']}, versionNumber: {type: integer, minimum: 1, description: 同一空间同名文件的第几个版本。}, errorCode: {type: [string, 'null'], description: 解析失败原因，成功时为 null。}}}
+    DocumentPreview: {allOf: [{$ref: '#/components/schemas/DocumentSummary'}, {$ref: '#/components/schemas/DocumentMeta'}, {type: object, required: [previewText], properties: {previewText: {type: [string, 'null'], description: 服务端提取并生成的纯文本预览，尚无可预览正文时为 null。}}}]}
+    ImportBatch: {type: object, required: [batchId, spaceId, status, files], properties: {batchId: {$ref: '#/components/schemas/Id'}, spaceId: {$ref: '#/components/schemas/Id'}, status: {type: string, enum: [PROCESSING, COMPLETED]}, files: {type: array, minItems: 1, items: {$ref: '#/components/schemas/ImportFile'}}}}
+    ImportFile:
+      type: object
+      required: [name, status]
+      properties:
+        name: {type: string, description: 取自上传部分文件元数据并经服务端规范化。}
+        status: {type: string, enum: [QUEUED, PROCESSING, READY, NO_TEXT, FAILED, SKIPPED_DUPLICATE, REJECTED]}
+        documentVersionId: {$ref: '#/components/schemas/Id'}
+        code: {type: string, enum: [NO_EXTRACTABLE_TEXT, PROCESSING_FAILED, DUPLICATE_NAME, FILE_TOO_LARGE, UNSUPPORTED_FILE, INVALID_FILE, SUSPICIOUS_FILE], description: 单文件处理码；SUSPICIOUS_FILE 表示该文件安全检查未通过（REJECTED），不是 HTTP 错误码。}
+        sizeBytes: {type: [integer, 'null'], minimum: 0, description: 原始文件字节数，未落库的文件为 null。}
+        mediaType: {type: [string, 'null']}
+        versionNumber: {type: [integer, 'null'], minimum: 1}
+      allOf:
+        - if: {properties: {status: {enum: [QUEUED, PROCESSING, READY, NO_TEXT, FAILED]}}}
+          then: {required: [documentVersionId]}
+          else: {not: {required: [documentVersionId]}}
+        - if: {properties: {status: {enum: [NO_TEXT, FAILED, SKIPPED_DUPLICATE, REJECTED]}}}
+          then: {required: [code]}
+    SearchHit:
+      type: object
+      required: [documentVersionId, name, status, validity, versionNumber]
+      properties:
+        documentVersionId: {$ref: '#/components/schemas/Id'}
+        name: {type: string}
+        status: {$ref: '#/components/schemas/DocumentStatus'}
+        snippet: {type: [string, 'null'], description: 正文命中片段使用 mark 标签标注关键词，名称命中时省略。}
+        match: {type: string, enum: [NAME, TEXT]}
+        validity: {type: string, enum: [EFFECTIVE, EXPIRED, UNCERTAIN], description: 结合快照政策状态与生效区间算出的当前有效性。}
+        versionNumber: {type: integer, minimum: 1}
+    SearchResult:
+      type: object
+      required: [status, items, nextCursor, contentSource]
+      properties: {status: {type: string, enum: [READY, PROCESSING, NO_MATCH]}, items: {type: array, items: {$ref: '#/components/schemas/SearchHit'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, contentSource: {type: string, enum: [PUBLISHED, WITHDRAWN, DRAFT], description: 本次命中实际来自当前发布快照、已撤回的最近一次发布快照，还是未发布草稿。}}
+      if: {properties: {status: {const: READY}}}
+      then: {properties: {items: {minItems: 1}}}
+      allOf:
+        - if: {properties: {status: {const: NO_MATCH}}}
+          then: {properties: {items: {maxItems: 0}, nextCursor: {const: null}}}
+    SnapshotEntry:
+      type: object
+      required: [documentVersionId, name, policyState, parseState]
+      properties:
+        documentVersionId: {$ref: '#/components/schemas/Id'}
+        name: {type: string}
+        policyState: {type: string, enum: [EFFECTIVE, EXPIRED, UNKNOWN]}
+        effectiveFrom: {type: string, format: date}
+        effectiveUntil: {type: string, format: date}
+        replacesDocumentVersionId: {$ref: '#/components/schemas/Id'}
+        parseState: {$ref: '#/components/schemas/DocumentStatus'}
+    PublishRequest:
+      type: object
+      required: [requestId, spaceId, snapshotId, submittedBy, submittedAt, draftRevision, status, snapshot, submissionReason, decisionReason, decisionRequired, publicationId]
+      properties:
+        requestId: {$ref: '#/components/schemas/Id'}
+        spaceId: {$ref: '#/components/schemas/Id'}
+        submittedBy: {$ref: '#/components/schemas/Id'}
+        submittedAt: {type: string, format: date-time}
+        draftRevision: {$ref: '#/components/schemas/Count'}
+        status: {type: string, enum: [PENDING_REVIEW, APPROVED_WAITING_INDEX, PUBLISHED, REJECTED, CANCELLED], description: 发布前的基线失效可取消申请，不得恢复旧发布。}
+        snapshotId: {$ref: '#/components/schemas/Id'}
+        snapshot: {type: array, description: 冻结的政策与文档清单，附当前解析状态。, items: {$ref: '#/components/schemas/SnapshotEntry'}}
+        submissionReason: {type: [string, 'null']}
+        decisionReason: {type: [string, 'null']}
+        decisionRequired: {type: boolean}
+        publicationId: {type: [string, 'null'], format: uuid}
+    PublishRequestPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/PublishRequest'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    SubmitInput: {type: object, properties: {reason: {type: [string, 'null'], description: 缺省或空白使用默认提交原因。}}}
+    DecisionInput:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties: {decision: {type: string, enum: [APPROVE, REJECT]}, reason: {$ref: '#/components/schemas/Reason'}}
+      if: {properties: {decision: {const: REJECT}}}
+      then: {required: [reason]}
+    WithdrawalResult: {type: object, required: [spaceId, epoch], properties: {spaceId: {$ref: '#/components/schemas/Id'}, epoch: {$ref: '#/components/schemas/Count'}}}
+    WithdrawalInput: {type: object, required: [expectedPublicationId, reason], additionalProperties: false, properties: {expectedPublicationId: {$ref: '#/components/schemas/Id'}, reason: {$ref: '#/components/schemas/Reason'}}}
+    MemberPermissions: {type: object, required: [canRead, canMaintain], additionalProperties: false, properties: {canRead: {type: boolean}, canMaintain: {type: boolean}}}
+    SpaceMember: {type: object, required: [userId, displayName, canRead, canMaintain], properties: {userId: {$ref: '#/components/schemas/Id'}, displayName: {type: string}, canRead: {type: boolean}, canMaintain: {type: boolean}}}
+    MemberPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/SpaceMember'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    UserSpace: {type: object, required: [spaceId, spaceName, canRead, canMaintain, owned], properties: {spaceId: {$ref: '#/components/schemas/Id'}, spaceName: {type: string}, canRead: {type: boolean}, canMaintain: {type: boolean}, owned: {type: boolean, description: 空间由该成员创建时为 true；所有者权限不可收回。}}}
+    UserSpaceMembership: {type: object, required: [spaceId, canRead, canMaintain], additionalProperties: false, properties: {spaceId: {$ref: '#/components/schemas/Id'}, canRead: {type: boolean}, canMaintain: {type: boolean}}}
+    SpaceMembershipsInput: {type: object, required: [memberships], additionalProperties: false, properties: {memberships: {type: array, items: {$ref: '#/components/schemas/UserSpaceMembership'}}}}
+    UserSpaceMembershipPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/UserSpace'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    AssistantBinding: {type: object, required: [spaceId, role], additionalProperties: false, properties: {spaceId: {$ref: '#/components/schemas/Id'}, role: {type: string, const: RETRIEVAL, description: 检索来源角色，不授予用户权限。}}}
+    AssistantBindingView: {type: object, required: [spaceId, role, spaceName], properties: {spaceId: {$ref: '#/components/schemas/Id'}, role: {type: string, const: RETRIEVAL, description: 检索来源角色，不授予用户权限。}, spaceName: {type: string, description: 空间名称，只读回填；绑定接口不接受该字段。}}}
+    AssistantConfig: {type: object, required: [name], additionalProperties: false, properties: {name: {type: string, minLength: 1}, bindings: {type: array, uniqueItems: true, items: {$ref: '#/components/schemas/AssistantBinding'}}, templateId: {type: [string, 'null'], format: uuid, description: 助手级回答模板标识，null 时继承全局模板。}, enabled: {type: boolean, description: 停用后不参与问答解析；不传时保持原状态。}}}
+    AssistantView: {type: object, required: [assistantId, name, bindings, enabled], properties: {assistantId: {$ref: '#/components/schemas/Id'}, name: {type: string}, bindings: {type: array, items: {$ref: '#/components/schemas/AssistantBindingView'}}, enabled: {type: boolean, description: 管理员列表包含已停用助手，据此显示状态。}}}
+    NewAssistant: {type: object, additionalProperties: false, required: [name], properties: {name: {type: string, minLength: 1, maxLength: 120}, bindings: {type: array, uniqueItems: true, default: [], items: {$ref: '#/components/schemas/AssistantBinding'}}, templateId: {type: [string, 'null'], format: uuid, default: null}}}
+    AssistantAdmin: {allOf: [{$ref: '#/components/schemas/AssistantView'}, {type: object, required: [templateId, template, enabled], properties: {templateId: {type: [string, 'null'], format: uuid}, template: {type: [string, 'null'], description: 已解析的模板正文，只读。}, enabled: {type: boolean}}}]}
+    Conversation:
+      type: object
+      required: [conversationId, assistantId, createdAt, archived]
+      properties:
+        conversationId: {$ref: '#/components/schemas/Id'}
+        assistantId: {$ref: '#/components/schemas/Id'}
+        createdAt: {type: string, format: date-time}
+        archived: {type: boolean}
+        title: {type: [string, 'null'], maxLength: 240, description: 标题由首个问题自动提炼，超过 30 个字符截断并加省略号；用户显式命名的标题不被覆盖。}
+    ConversationPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/Conversation'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    MessagePage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/Message'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    Message:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [messageId, questionId, role, createdAt, text]
+          properties:
+            messageId: {type: string, description: 问题 UUID 后附加 -q。}
+            questionId: {$ref: '#/components/schemas/Id'}
+            role: {const: USER}
+            createdAt: {type: string, format: date-time}
+            text: {type: string}
+        - type: object
+          additionalProperties: false
+          required: [messageId, questionId, role, createdAt, paragraphs, status, failureCode]
+          properties:
+            messageId: {type: string, description: 问题 UUID 后附加 -a。}
+            questionId: {$ref: '#/components/schemas/Id'}
+            role: {const: ASSISTANT}
+            createdAt: {type: string, format: date-time}
+            paragraphs: {type: array, items: {$ref: '#/components/schemas/Paragraph'}}
+            status: {$ref: '#/components/schemas/QuestionStatus'}
+            failureCode: {$ref: '#/components/schemas/QuestionFailureCode'}
+    QuestionStatus: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]}
+    QuestionFailureCode: {type: [string, 'null'], enum: [QUESTION_FAILED, CONTEXT_CHANGED, MODEL_UNAVAILABLE, null], description: 未失败时为 null。权限或发布状态变化时提示重新提问，显式选择的模型在执行时已不可选或网关调用失败，返回 MODEL_UNAVAILABLE。}
+    QuestionInput: {type: object, required: [text], additionalProperties: false, properties: {text: {type: string, minLength: 1, maxLength: 2000, pattern: '\S'}, requestedSpaceIds: {type: array, minItems: 1, uniqueItems: true, items: {$ref: '#/components/schemas/Id'}}, modelId: {type: [string, 'null'], format: uuid, description: 从模型选项中选择的本次提问模型。}}}
+    FirstQuestionInput: {type: object, required: [text], additionalProperties: false, properties: {assistantId: {$ref: '#/components/schemas/Id', description: 省略时使用任一启用助手。}, text: {type: string, minLength: 1, maxLength: 2000, pattern: '\S'}, requestedSpaceIds: {type: array, minItems: 1, uniqueItems: true, items: {$ref: '#/components/schemas/Id'}}, modelId: {type: [string, 'null'], format: uuid, description: 从模型选项中选择的本次提问模型。}}}
+    ConversationQuestionAccepted: {type: object, required: [questionId, status, conversation], properties: {questionId: {$ref: '#/components/schemas/Id'}, status: {type: string, const: QUEUED}, conversation: {$ref: '#/components/schemas/Conversation'}}}
+    QuestionAccepted: {type: object, required: [questionId, status], properties: {questionId: {$ref: '#/components/schemas/Id'}, status: {type: string, const: QUEUED}}}
+    Question:
+      type: object
+      additionalProperties: false
+      required: [questionId, status, paragraphs, failureCode, tokenTotal]
+      properties:
+        questionId: {$ref: '#/components/schemas/Id'}
+        status: {$ref: '#/components/schemas/QuestionStatus'}
+        paragraphs: {type: array, items: {$ref: '#/components/schemas/Paragraph'}}
+        failureCode: {$ref: '#/components/schemas/QuestionFailureCode'}
+        tokenTotal: {type: [integer, 'null'], minimum: 0, description: 该次提问已上报的 token 合计；全部未上报时为 null，用于对账。}
+    Paragraph:
+      oneOf:
+        - {$ref: '#/components/schemas/VisibleParagraph'}
+        - {$ref: '#/components/schemas/MaskedParagraph'}
+    VisibleParagraph: {type: object, additionalProperties: false, required: [id, status, kind, text, citations], properties: {id: {$ref: '#/components/schemas/Id'}, status: {type: string, const: VISIBLE}, kind: {type: string, enum: [ANSWER, NO_EVIDENCE, EXPIRED, UNCERTAIN, CONFLICT]}, text: {type: string, description: 可展示的回答文字，不附带原始证据字段。}, citations: {type: array, items: {$ref: '#/components/schemas/CitationLabel'}}}}
+    MaskedParagraph: {type: object, additionalProperties: false, required: [id, status, code], properties: {id: {$ref: '#/components/schemas/Id'}, status: {type: string, const: MASKED}, code: {type: string, const: SOURCE_UNAVAILABLE}}}
+    CitationLabel: {type: object, additionalProperties: false, required: [citationId, label], properties: {citationId: {$ref: '#/components/schemas/Id'}, label: {type: string}}}
+    UsagePeriod: {type: string, enum: [DAY, WEEK, MONTH]}
+    UsageRankingPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {type: object, required: [userId, displayName, conversationCount, questionCount, failedQuestionCount, reportedTokenCount, unreportedModelCallCount], properties: {userId: {$ref: '#/components/schemas/Id'}, displayName: {type: string}, conversationCount: {$ref: '#/components/schemas/Count'}, questionCount: {$ref: '#/components/schemas/Count'}, failedQuestionCount: {$ref: '#/components/schemas/Count'}, reportedTokenCount: {type: [integer, 'null'], minimum: 0}, unreportedModelCallCount: {$ref: '#/components/schemas/Count'}}}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    UsageQuestionPage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {type: object, required: [questionId, userId, acceptedAt, status, text, tokenTotal], properties: {questionId: {$ref: '#/components/schemas/Id'}, userId: {$ref: '#/components/schemas/Id'}, acceptedAt: {type: string, format: date-time}, status: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]}, text: {type: string}, tokenTotal: {type: [integer, 'null'], minimum: 0}}}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    UsageSpacePage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {type: object, required: [spaceId, name, citationCount, questionCount], properties: {spaceId: {$ref: '#/components/schemas/Id'}, name: {type: string}, citationCount: {$ref: '#/components/schemas/Count'}, questionCount: {$ref: '#/components/schemas/Count'}}}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+    UsageSeries: {type: object, required: [period, date, timeZone, buckets], properties: {period: {$ref: '#/components/schemas/UsagePeriod'}, date: {type: string, format: date}, timeZone: {type: string, const: Asia/Shanghai}, buckets: {type: array, items: {type: object, required: [label, bucketStart, questionCount, failedQuestionCount], properties: {label: {type: string}, bucketStart: {type: string}, questionCount: {$ref: '#/components/schemas/Count'}, failedQuestionCount: {$ref: '#/components/schemas/Count'}}}}}}
+    Usage:
+      type: object
+      required: [userId, period, periodStart, periodEndExclusive, timeZone, conversationCount, questionCount, failedQuestionCount, reportedTokenCount, unreportedModelCallCount]
+      properties:
+        userId: {type: [string, 'null'], format: uuid, description: 全员汇总时为 null。}
+        period: {$ref: '#/components/schemas/UsagePeriod'}
+        periodStart: {type: string, format: date}
+        periodEndExclusive: {type: string, format: date}
+        timeZone: {type: string, const: Asia/Shanghai}
+        conversationCount: {$ref: '#/components/schemas/Count'}
+        questionCount: {$ref: '#/components/schemas/Count'}
+        failedQuestionCount: {$ref: '#/components/schemas/Count'}
+        reportedTokenCount: {type: [integer, 'null'], minimum: 0, description: 按提问受理时间归期的已上报用量之和。没有上报值时为 null，实报零为 0。}
+        unreportedModelCallCount: {$ref: '#/components/schemas/Count'}
+    AnswerTemplateInput: {type: object, required: [name, body], additionalProperties: false, properties: {name: {type: string, minLength: 1, maxLength: 120}, body: {type: string, minLength: 1}, enabled: {type: boolean, description: 停用后不参与解析，回退到其他模板。}}}
+    AnswerTemplate: {type: object, required: [templateId, name, body, enabled, revision, isGlobal, assistantIds, updatedAt], properties: {templateId: {$ref: '#/components/schemas/Id'}, name: {type: string}, body: {type: string}, enabled: {type: boolean}, revision: {$ref: '#/components/schemas/Count'}, isGlobal: {type: boolean, description: 是否为全局模板。}, assistantIds: {type: array, items: {$ref: '#/components/schemas/Id'}}, updatedAt: {type: [string, 'null'], format: date-time, description: 最近编辑时间，供列表显示「编辑于 …」。}}}
+    AnswerTemplateGenerationInput: {type: object, required: [mode, requirements], additionalProperties: false, properties: {mode: {type: string, enum: [STRUCTURED, ADVANCED], description: 目标编辑格式。}, scenario: {type: string, maxLength: 240, description: 使用场景简述，参与提示词。}, requirements: {type: string, minLength: 10, maxLength: 2000, description: 用户对模板的要求。}, referenceTemplateId: {type: [string, 'null'], format: uuid, description: 可选：基于既有模板改写。}, modelConfigId: {type: [string, 'null'], format: uuid, description: 可选：指定模型配置；缺省用全局默认模型。}}}
+    AnswerTemplateGeneration: {type: object, required: [generationId, status, mode, scenario, resultBody, failureCode, inputTokens, outputTokens, modelAlias, createdAt, finishedAt], properties: {generationId: {$ref: '#/components/schemas/Id'}, status: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]}, mode: {type: string, enum: [STRUCTURED, ADVANCED]}, scenario: {type: string}, resultBody: {type: [string, 'null'], description: 成功的模板正文；未完成或失败为 null。}, failureCode: {type: [string, 'null'], description: MODEL_TIMEOUT / MODEL_UNAVAILABLE / MODEL_RATE_LIMITED / INVALID_MODEL_OUTPUT 等。}, inputTokens: {type: [integer, 'null'], minimum: 0, description: null 表示模型未上报。}, outputTokens: {type: [integer, 'null'], minimum: 0}, modelAlias: {type: string, description: 模型别名快照。}, createdAt: {type: string, format: date-time}, finishedAt: {type: [string, 'null'], format: date-time}}}
+    AnswerTemplatePage: {type: object, required: [items, nextCursor, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/AnswerTemplate'}}, nextCursor: {$ref: '#/components/schemas/NextCursor'}, total: {$ref: '#/components/schemas/Count'}}}
+
+    GlobalSettingsInput: {type: object, additionalProperties: false, properties: {defaultModelId: {type: [string, 'null'], format: uuid}, templateId: {type: [string, 'null'], format: uuid}, contextLimit: {type: integer, minimum: 1, maximum: 100, default: 10}, usageReportEnabled: {type: boolean, default: true}}}
+    GlobalSettings: {type: object, required: [defaultModelId, modelAlias, templateId, template, contextLimit, usageReportEnabled, revision], additionalProperties: false, properties: {revision: {$ref: '#/components/schemas/Count'}, defaultModelId: {type: [string, 'null'], format: uuid, description: 默认模型配置标识，指向 model-configs 中一条；null 表示未配置。}, modelAlias: {type: [string, 'null'], description: 默认模型的别名（只读解析结果）。}, templateId: {type: [string, 'null'], format: uuid, description: 全局回答模板标识，未配置助手模板时使用。}, template: {type: [string, 'null'], description: 已解析的模板正文，只读。}, contextLimit: {type: integer, minimum: 1, maximum: 100, description: 保存的上下文引用设置。当前检索固定最多选取 20 个正文块。}, usageReportEnabled: {type: boolean, description: 保存的用量上报设置。当前 worker 仍按适配器的实际返回记录 Tokens。}}}

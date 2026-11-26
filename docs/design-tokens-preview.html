@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>设计 Token 预览 · 亮色 / 暗色</title>
+    <!-- 直接引用项目真实样式，预览即验证：不是另抄一份色值 -->
+    <link rel="stylesheet" href="../frontend/src/styles/theme.css" />
+    <link rel="stylesheet" href="../frontend/src/styles/base.css" />
+    <link rel="stylesheet" href="../frontend/src/styles/components.css" />
+    <style>
+      body {
+        padding: var(--space-6);
+      }
+      .pv-head {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6))
+          var(--space-6);
+        padding: var(--space-3) var(--space-6);
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .pv-head h1 {
+        font-size: var(--text-lg);
+        font-weight: 600;
+      }
+      .pv-switch {
+        display: flex;
+        gap: var(--space-1);
+        padding: 2px;
+        background: var(--color-divider);
+        border-radius: var(--radius-pill);
+      }
+      .pv-switch button {
+        padding: var(--space-1) var(--space-4);
+        border: 1px solid transparent;
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-size: var(--text-sm);
+        cursor: pointer;
+      }
+      .pv-switch button[aria-pressed="true"] {
+        background: var(--color-surface);
+        border-color: var(--color-border);
+        color: var(--color-text);
+        font-weight: 600;
+      }
+      section {
+        margin-bottom: var(--space-6);
+      }
+      section > h2 {
+        margin-bottom: var(--space-1);
+        font-size: var(--text-base);
+        font-weight: 600;
+      }
+      section > p {
+        margin-bottom: var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .pv-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+        gap: var(--space-2);
+      }
+      .pv-cell {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control);
+        overflow: hidden;
+        background: var(--color-surface);
+      }
+      .pv-chip {
+        height: 56px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .pv-meta {
+        padding: var(--space-2);
+        font-size: var(--text-xs);
+        line-height: 1.45;
+      }
+      .pv-meta code {
+        display: block;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+      }
+      .pv-meta strong {
+        font-weight: 600;
+      }
+      .pv-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .pv-swatch-line {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 1px solid var(--color-divider);
+        font-size: var(--text-sm);
+      }
+      .pv-swatch-line:last-child {
+        border-bottom: 0;
+      }
+      .pv-dot {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        border: 1px solid var(--color-border);
+      }
+      .pv-toggle-hit {
+        margin-top: var(--space-2);
+      }
+      .pv-layers {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .pv-layer {
+        padding: var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-control);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="pv-head">
+      <h1>设计 Token 预览 · 亮色 / 暗色</h1>
+      <div class="pv-switch" role="group" aria-label="切换主题">
+        <button type="button" id="btn-light" aria-pressed="true">亮色</button>
+        <button type="button" id="btn-dark" aria-pressed="false">暗色</button>
+      </div>
+    </header>
+
+    <section>
+      <h2>表面层级</h2>
+      <p>结构同向：页底最暗 → 卡片 → 浮层最亮；选中行用主色淡底。</p>
+      <div class="pv-grid" id="grid-surface"></div>
+    </section>
+
+    <section>
+      <h2>文字与描边</h2>
+      <p>三档文字在页底、卡片、选中行上均满足 4.5:1。</p>
+      <div class="bk-card" id="text-sample">
+        <div class="pv-swatch-line">
+          <strong style="color: var(--color-text)">正文 --color-text</strong>
+          <span style="color: var(--color-text)" id="val-text"></span>
+        </div>
+        <div class="pv-swatch-line">
+          <span style="color: var(--color-text-secondary)"
+            >次要文字 --color-text-secondary</span
+          >
+          <span id="val-text-secondary"></span>
+        </div>
+        <div class="pv-swatch-line">
+          <span style="color: var(--color-text-muted)"
+            >弱化文字 --color-text-muted</span
+          >
+          <span id="val-text-muted"></span>
+        </div>
+        <div class="pv-swatch-line">
+          <span
+            class="pv-dot"
+            style="background: var(--color-border); border-radius: 2px"
+          ></span>
+          <span>--color-border</span><span id="val-border"></span>
+        </div>
+        <div class="pv-swatch-line">
+          <span
+            class="pv-dot"
+            style="background: var(--color-divider); border-radius: 2px"
+          ></span>
+          <span>--color-divider</span><span id="val-divider"></span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>主操作与交互态</h2>
+      <p>
+        亮色越按越深、暗色越按越亮，都是朝远离底气色的方向走；按钮文字两套主题各自
+        ≥4.5:1。
+      </p>
+      <div class="pv-row">
+        <button type="button" class="bk-btn bk-btn-primary">主操作</button>
+        <button type="button" class="bk-btn">次操作</button>
+        <button type="button" class="bk-btn bk-btn-danger">危险操作</button>
+        <a href="#preview">链接文字</a>
+        <button type="button" class="bk-btn bk-btn-sm">小号按钮</button>
+      </div>
+      <div
+        class="pv-grid"
+        id="grid-action"
+        style="margin-top: var(--space-3)"
+      ></div>
+    </section>
+
+    <section>
+      <h2>状态色</h2>
+      <p>徽标＝浅底 + 深字，填充色不铺大面积。</p>
+      <div class="pv-row">
+        <span class="bk-badge bk-badge-ok">已发布</span>
+        <span class="bk-badge bk-badge-warn">审核中</span>
+        <span class="bk-badge bk-badge-fail">失败</span>
+        <span class="bk-badge bk-badge-info">草稿</span>
+        <span class="status status-success">success</span>
+        <span class="status status-warning">warning</span>
+        <span class="status status-danger">danger</span>
+      </div>
+      <div
+        class="pv-grid"
+        id="grid-status"
+        style="margin-top: var(--space-3)"
+      ></div>
+    </section>
+
+    <section>
+      <h2>表单与表格</h2>
+      <p>真实组件类名渲染，检查描边、隔行、选中行在两种主题下的可读性。</p>
+      <div class="bk-card">
+        <div class="bk-field">
+          <label for="pv-input">输入框</label>
+          <input
+            class="bk-input"
+            id="pv-input"
+            placeholder="占位文字需要 4.5:1"
+          />
+        </div>
+        <div
+          class="bk-table-wrap table-auto-height"
+          style="margin-top: var(--space-3)"
+        >
+          <table class="bk-table">
+            <thead>
+              <tr>
+                <th scope="col">文档</th>
+                <th scope="col">状态</th>
+                <th scope="col">更新</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="bk-row-title">检索召回率复盘</span></td>
+                <td><span class="bk-badge bk-badge-ok">已发布</span></td>
+                <td class="bk-muted">今天 09:12</td>
+              </tr>
+              <tr>
+                <td><span class="bk-row-title">空间权限说明</span></td>
+                <td><span class="bk-badge bk-badge-warn">审核中</span></td>
+                <td class="bk-muted">昨天 18:40</td>
+              </tr>
+              <tr
+                class="is-selected"
+                style="background: var(--color-surface-selected)"
+              >
+                <td><span class="bk-row-title">选中行示例</span></td>
+                <td><span class="bk-badge bk-badge-info">草稿</span></td>
+                <td class="bk-muted">3 天前</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>浮层（弹窗 / 抽屉）</h2>
+      <p>
+        亮色靠阴影与遮罩，暗色靠提亮一档的表层 + 遮罩；遮罩在小窗内做局部演示。
+      </p>
+      <div
+        style="
+          position: relative;
+          padding: var(--space-5);
+          border-radius: var(--radius-panel);
+          overflow: hidden;
+          background: var(--color-canvas);
+          border: 1px solid var(--color-border);
+        "
+      >
+        <div
+          style="position: absolute; inset: 0; background: var(--color-mask)"
+        ></div>
+        <div
+          class="bk-card"
+          style="
+            position: relative;
+            max-width: 340px;
+            margin: 0 auto;
+            background: var(--color-surface-raised);
+            box-shadow: var(--elev-raised);
+          "
+        >
+          <h3 style="font-size: var(--text-base); font-weight: 600">
+            确认删除
+          </h3>
+          <p class="bk-muted" style="margin-top: var(--space-1)">
+            删除后不可恢复，请确认这份文档不再需要。
+          </p>
+          <div
+            class="pv-row"
+            style="margin-top: var(--space-4); justify-content: flex-end"
+          >
+            <button type="button" class="bk-btn">取消</button>
+            <button type="button" class="bk-btn bk-btn-danger">删除</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const tokens = [
+        ["页底", "--color-canvas"],
+        ["卡片", "--color-surface"],
+        ["浮层", "--color-surface-raised"],
+        ["选中行", "--color-surface-selected"],
+      ];
+      const actionTokens = [
+        ["主色", "--color-action"],
+        ["hover", "--color-action-hover"],
+        ["active", "--color-action-active"],
+        ["按钮文字", "--color-action-text"],
+      ];
+      const statusTokens = [
+        ["success", "--color-success"],
+        ["warning", "--color-warning"],
+        ["danger", "--color-danger"],
+        ["success 浅底", "--color-surface-success"],
+        ["warning 浅底", "--color-surface-warning"],
+        ["danger 浅底", "--color-surface-danger"],
+      ];
+
+      const read = (name) =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue(name)
+          .trim();
+
+      const fillGrid = (el, list) => {
+        el.innerHTML = list
+          .map(
+            ([label, name]) => `
+              <div class="pv-cell">
+                <div class="pv-chip" style="background: var(${name})"></div>
+                <div class="pv-meta">
+                  <strong>${label}</strong>
+                  <code>${name}</code>
+                  <code>${read(name)}</code>
+                </div>
+              </div>`,
+          )
+          .join("");
+      };
+
+      const render = () => {
+        fillGrid(document.getElementById("grid-surface"), tokens);
+        fillGrid(document.getElementById("grid-action"), actionTokens);
+        fillGrid(document.getElementById("grid-status"), statusTokens);
+        for (const key of [
+          "text",
+          "text-secondary",
+          "text-muted",
+          "border",
+          "divider",
+        ]) {
+          const el = document.getElementById("val-" + key);
+          if (el) {
+            el.textContent = read("--color-" + key);
+            el.style.fontFamily = "var(--font-mono)";
+            el.style.color = "var(--color-text-muted)";
+          }
+        }
+      };
+
+      const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        document
+          .getElementById("btn-light")
+          .setAttribute("aria-pressed", String(theme === "light"));
+        document
+          .getElementById("btn-dark")
+          .setAttribute("aria-pressed", String(theme === "dark"));
+        render();
+      };
+
+      document.getElementById("btn-light").addEventListener("click", () => {
+        apply("light");
+      });
+      document.getElementById("btn-dark").addEventListener("click", () => {
+        apply("dark");
+      });
+
+      render();
+    </script>
+  </body>
+</html>

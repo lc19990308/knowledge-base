@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 助手 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.chat-layout { display: grid; grid-template-columns: 260px 1fr; gap: var(--space-4); height: calc(100vh - 140px); min-height: 560px; }
+@media (max-width: 1100px) { .chat-layout { grid-template-columns: 1fr; height: auto; } }
+.conv-list { display: flex; flex-direction: column; gap: 2px; }
+.conv-item { padding: 10px var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); color: var(--fg-2); cursor: pointer; }
+.conv-item:hover { background: var(--border-soft); }
+.conv-item.on { background: var(--surface-warm); color: var(--accent); font-weight: 600; }
+.conv-item .c-time { display: block; font-size: var(--text-xs); color: var(--muted); font-weight: 400; margin-top: 2px; }
+.chat-main { display: flex; flex-direction: column; min-height: 0; }
+.chat-scroll { flex: 1; overflow-y: auto; padding-right: var(--space-2); }
+.msg { display: flex; gap: var(--space-3); margin-bottom: var(--space-5); }
+.msg .m-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700;
+}
+.msg-user .m-avatar { background: var(--border-soft); color: var(--fg-2); }
+.msg-ai .m-avatar { background: var(--accent); color: var(--accent-on); }
+.m-body { flex: 1; min-width: 0; }
+.m-bubble { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); }
+.msg-user .m-bubble { background: var(--surface-warm); border-color: color-mix(in srgb, var(--accent) 22%, var(--border)); }
+.msg-ai .m-bubble { box-shadow: 0 1px 2px rgba(23,32,51,0.04); }
+.m-body .m-time { font-size: var(--text-xs); color: var(--muted); margin-top: 6px; }
+/* 引用块 */
+.cite-block { margin-top: var(--space-3); border-top: 1px solid var(--border-soft); padding-top: var(--space-3); }
+.cite-label { font-size: var(--text-xs); font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+.cite-item {
+  display: flex; align-items: flex-start; gap: 10px; text-decoration: none;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  margin-bottom: 6px; color: var(--fg); background: var(--bg); font-size: var(--text-xs);
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+.cite-item:hover { border-color: var(--accent); text-decoration: none; }
+.cite-item .c-no {
+  width: 18px; height: 18px; border-radius: 50%; flex: none; margin-top: 1px;
+  background: var(--surface-warm); color: var(--accent);
+  display: grid; place-items: center; font-size: 10px; font-weight: 700;
+}
+.cite-item .c-title { font-weight: 600; color: var(--fg); }
+.cite-item .c-sub { color: var(--muted); margin-top: 2px; }
+.cite-item .c-ver { margin-left: auto; flex: none; }
+/* 特殊回答态 */
+.ans-flag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 700; padding: 4px 10px; border-radius: var(--radius-pill); margin-bottom: var(--space-2); }
+.af-none  { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); color: #92400e; }
+.af-expired { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); }
+.af-unknown { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); color: #92400e; }
+.af-conflict { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+/* 冲突对照 */
+.conflict-table td, .conflict-table th { font-size: var(--text-xs); }
+.chat-input { display: flex; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.chat-input textarea { flex: 1; min-height: 46px; max-height: 120px; }
+.binding-note { font-size: var(--text-xs); color: var(--muted); padding: 8px var(--space-3); background: var(--bg); border-radius: var(--radius-sm); margin-top: var(--space-3); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html" aria-current="page">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>AI 助手</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content" style="max-width:1200px;">
+      <div class="chat-layout" data-od-id="chat-layout">
+        <!-- 会话列表 -->
+        <aside class="card" data-od-id="conversation-list" aria-label="会话列表" style="padding:var(--space-3); overflow-y:auto;">
+          <button class="btn btn-primary" id="new-question" style="width:100%; margin-bottom:var(--space-3);">＋ 新提问</button>
+          <div class="conv-list">
+            <div class="conv-item on" role="button" tabindex="0" aria-pressed="true" data-message="normal-answer">差旅报销的时限与发票要求<span class="c-time">今天 10:32</span></div>
+            <div class="conv-item" role="button" tabindex="0" aria-pressed="false" data-message="conflict-answer">现行报销政策冲突点<span class="c-time">今天 09:15</span></div>
+            <div class="conv-item" role="button" tabindex="0" aria-pressed="false" data-message="masked-answer">已撤回空间的追问（屏蔽态演示）<span class="c-time">昨天</span></div>
+            <div class="conv-item" role="button" tabindex="0" aria-pressed="false" data-message="expired-answer">2024 版报销标准（失效）<span class="c-time">今天 10:38</span></div>
+          </div>
+        </aside>
+
+        <!-- 对话主区 -->
+        <section class="card chat-main" data-od-id="chat-main" style="min-height:0;">
+          <!-- 绑定说明 -->
+          <div class="flex flex-wrap" style="gap:8px; padding-bottom:var(--space-3); border-bottom:1px solid var(--border);">
+            <span class="text-xs muted">助手「差旅政策助手」可用空间：</span>
+            <span class="chip on" id="available-space" hidden>差旅报销制度 ✓ 有权限</span>
+            <span class="text-xs muted" id="no-available-space" hidden>暂无可访问的已发布空间</span>
+            <span class="grow"></span>
+            <span class="text-xs muted">模板：助手级「差旅专用模板」优先于全局模板</span>
+          </div>
+
+          <div class="chat-scroll mt-4" id="conversation" data-od-id="chat-scroll" hidden>
+            <!-- 正常回答 -->
+            <div class="msg msg-user" id="normal-answer">
+              <span class="m-avatar">超</span>
+              <div class="m-body"><div class="m-bubble">差旅报销的时限是多少？我要怎么核对发票要求？</div><div class="m-time">10:32</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <span class="m-avatar">AI</span>
+              <div class="m-body">
+                <div data-travel-evidence="fixed" class="m-bubble">
+                  <p>国内差旅应在行程结束后 <strong>15 个工作日内</strong> 提交报销。发票应为增值税普通发票或专用发票，抬头为公司全称；住宿费需附入住水单。</p>
+                  <p class="mt-4"><span class="ans-flag af-unknown">有效性待核实</span> 跨境补充规定草案写的是从票据日期起算 20 个工作日，但尚不能确认是否生效，因此不能据此确定现行跨境时限。</p>
+                  <div class="cite-block">
+                    <div class="cite-label">引用文档（2）· 点击打开文档</div>
+                    <a class="cite-item" href="document.html?doc=travel-v3&amp;history=1"><span class="c-no">1</span><span><span class="c-title">差旅费用报销管理办法-v3.pdf</span><span class="c-sub">差旅报销制度 · 正文匹配「15 个工作日」</span></span><span class="c-ver"><span class="badge badge-published">引用版本 v3</span></span></a>
+                    <a class="cite-item" href="document.html?doc=cross-border&amp;history=1"><span class="c-no">2</span><span><span class="c-title">跨境差旅补充规定.docx</span><span class="c-sub">差旅报销制度 · 跨境时限待核实</span></span><span class="c-ver"><span class="badge badge-info">有效性待核实</span></span></a>
+                  </div>
+                </div>
+                <div class="m-time">10:32 · 模型 GLM-5.3 · Tokens 1,284</div>
+              </div>
+            </div>
+
+            <!-- 无依据 -->
+            <div class="msg msg-user">
+              <span class="m-avatar">超</span>
+              <div class="m-body"><div class="m-bubble">报销能用微信支付截图代替发票吗？</div><div class="m-time">10:35</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <span class="m-avatar">AI</span>
+              <div class="m-body">
+                <div class="m-bubble">
+                  <span class="ans-flag af-none">◌ 无依据</span>
+                  <p>当前授权且已发布的空间内，没有文档对「支付截图能否代替发票」作出规定。我不能从授权文档得出结论，因此不提供推测性回答。建议咨询财务部确认。</p>
+                </div>
+                <div class="m-time">10:35 · 模型 GLM-5.3 · Tokens 96</div>
+              </div>
+            </div>
+
+            <!-- 失效提示 -->
+            <div class="msg msg-user" id="expired-answer">
+              <span class="m-avatar">超</span>
+              <div class="m-body"><div class="m-bubble">2024 版的报销标准是多少？</div><div class="m-time">10:38</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <span class="m-avatar">AI</span>
+              <div class="m-body">
+                <div data-travel-evidence="fixed" class="m-bubble">
+                  <span class="ans-flag af-expired">⛔ 政策已失效</span>
+                  <p>《差旅费用报销管理办法》v2（2024 版）已于 <strong>2026-10-31 失效</strong>，被现行 v3 取代。失效内容可检索但<strong>不作为现行依据</strong>：v2 规定住宿上限 400 元/晚，现行 v3 已调整为 450 元/晚。请以 v3 为准。</p>
+                  <div class="cite-block">
+                    <div class="cite-label">引用文档（2）</div>
+                    <a class="cite-item" href="document.html?doc=travel-v2&amp;history=1"><span class="c-no">1</span><span><span class="c-title">差旅费用报销管理办法.pdf</span><span class="c-sub">2024 版 · 历史规定</span></span><span class="c-ver"><span class="badge badge-warn">已失效 v2</span></span></a>
+                     <a class="cite-item" href="document.html?doc=travel-v3&amp;history=1"><span class="c-no">2</span><span><span class="c-title">差旅费用报销管理办法-v3.pdf</span><span class="c-sub">对照：住宿上限 450 元/晚</span></span><span class="c-ver"><span class="badge badge-published">引用版本 v3</span></span></a>
+                  </div>
+                </div>
+                <div class="m-time">10:38 · 模型 GLM-5.3 · Tokens 342</div>
+              </div>
+            </div>
+
+            <!-- 冲突 -->
+            <div class="msg msg-user" id="conflict-answer">
+              <span class="m-avatar">超</span>
+              <div class="m-body"><div class="m-bubble">住宿补贴到底按哪个文件执行？</div><div class="m-time">10:40</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <span class="m-avatar">AI</span>
+              <div class="m-body">
+                <div data-travel-evidence="fixed" class="m-bubble">
+                  <span class="ans-flag af-conflict">⚡ 政策冲突 · 逐项列出</span>
+                  <p>两份现行文档对「一线城市住宿补贴」规定不一致，以下逐项列出差异及各自来源，<strong>不给出单一结论</strong>：</p>
+                  <div class="table-wrap mt-4" style="border:none;">
+                    <table class="conflict-table">
+                      <thead><tr><th>差异项</th><th>文件 A</th><th>文件 B</th></tr></thead>
+                      <tbody>
+                        <tr><td class="row-title">一线城市住宿补贴</td><td>450 元/晚<span class="row-sub">差旅费用报销管理办法 v3</span></td><td>500 元/晚<span class="row-sub">差旅补贴实施细则</span></td></tr>
+                        <tr><td class="row-title">生效时间</td><td>2026-11-05</td><td>2026-09-01</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p class="text-xs muted mt-4">建议向政策发布部门确认适用顺序；两份文档均为现行有效状态。</p>
+                  <div class="cite-block">
+                    <div class="cite-label">引用文档（2）</div>
+                    <a class="cite-item" href="document.html?doc=travel-v3&amp;history=1"><span class="c-no">1</span><span><span class="c-title">差旅费用报销管理办法-v3.pdf</span><span class="c-sub">住宿上限 450 元/晚</span></span><span class="c-ver"><span class="badge badge-published">引用版本 v3</span></span></a>
+                    <a class="cite-item" href="document.html?doc=travel-subsidy&amp;history=1"><span class="c-no">2</span><span><span class="c-title">差旅补贴实施细则.pdf</span><span class="c-sub">住宿补贴 500 元/晚</span></span><span class="c-ver"><span class="badge badge-published">现行</span></span></a>
+                  </div>
+                </div>
+                <div class="m-time">10:40 · 模型 GLM-5.3 · Tokens 517</div>
+              </div>
+            </div>
+
+            <!-- 撤回屏蔽态 -->
+            <div class="msg msg-user" id="masked-answer">
+              <span class="m-avatar">超</span>
+              <div class="m-body"><div class="m-bubble">继续刚才的话题：撤回政策的过渡期怎么算？</div><div class="m-time">11:02</div></div>
+            </div>
+            <div class="msg msg-ai">
+              <span class="m-avatar">AI</span>
+              <div class="m-body">
+                <div class="m-bubble">
+                  <span class="ans-flag af-expired">⛔ 部分内容已屏蔽（来源已撤回）</span>
+                  <p class="muted">此段依赖已撤回的来源，内容和引用均不可查看。</p>
+                  <p class="mt-4">未受影响的回答：政策过渡期需以当前有效的正式通知为准。</p>
+                </div>
+                <div class="m-time">11:02 · 历史 会话中受影响引用已移除 · 追问不复用已屏蔽内容</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 输入区 -->
+          <form class="chat-input" id="question-form" data-od-id="chat-input">
+            <textarea id="question" required aria-label="提问内容" placeholder="基于当前授权且已发布的空间提问……（Enter 发送，Shift+Enter 换行）"></textarea>
+            <button class="btn btn-primary" type="submit" style="height:auto; padding:0 var(--space-5);">发送</button>
+          </form>
+          <div class="binding-note" data-od-id="binding-note">
+            本次回答仅使用你<strong>有权访问且已发布</strong>的空间；指定空间没有检索到资料时不自动扩展到其他未授权空间。当前登录用户不能通过历史会话或旧链接绕过撤回。
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="prototype-release.js"></script>
+<script src="prototype-documents.js"></script>
+<script src="prototype-assistant.js"></script>
+</body>
+</html>

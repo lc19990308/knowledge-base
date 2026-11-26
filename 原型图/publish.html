@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发布管理 · AI 智能问答平台</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.detail-drawer {
+  position: fixed; top: 0; right: 0; width: 620px; max-width: 92vw; height: 100vh;
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: var(--elev-raised); z-index: 50; overflow-y: auto;
+  padding: var(--space-6);
+}
+.drawer-mask { position: fixed; inset: 0; background: rgba(23,32,51,0.35); z-index: 40; }
+.timeline { border-left: 2px solid var(--border); margin-left: 6px; padding-left: var(--space-5); }
+.tl-item { position: relative; padding-bottom: var(--space-5); }
+.tl-item::before {
+  content: ""; position: absolute; left: calc(-1 * var(--space-5) - 7px); top: 3px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--muted);
+}
+.tl-item.done::before { background: var(--success); border-color: var(--success); }
+.tl-item.now::before { background: var(--accent); border-color: var(--accent); }
+.tl-item.bad::before { background: var(--danger); border-color: var(--danger); }
+.tl-item .tl-t { font-size: var(--text-sm); font-weight: 600; }
+.tl-item .tl-d { font-size: var(--text-xs); color: var(--muted); margin-top: 2px; }
+.reject-box { background: color-mix(in srgb, var(--danger) 6%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border)); border-radius: var(--radius-md); padding: var(--space-4); margin-top: var(--space-2); }
+.reject-box li { margin: 6px 0 0 18px; font-size: var(--text-sm); color: #991b1b; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" data-od-id="sidebar">
+    <div class="brand"><span class="brand-mark">问</span><span class="brand-name">AI 智能问答平台</span></div>
+    <div class="nav-group-label">工作区</div>
+    <a class="nav-link" href="workbench.html">▦ 工作台</a>
+    <a class="nav-link" href="knowledge.html">▤ 知识库</a>
+    <a class="nav-link" href="assistant.html">◉ AI 助手</a>
+    <div class="nav-group-label">管理</div>
+    <a class="nav-link" href="assistant-config.html">助手配置</a>
+    <a class="nav-link" href="answer-templates.html">回答模板</a>
+    <a class="nav-link" href="publish.html" aria-current="page">发布管理<span class="nav-badge">3</span></a>
+    <a class="nav-link" href="stats.html">问答统计</a>
+    <a class="nav-link" href="settings.html">系统设置</a>
+    <div class="sidebar-foot"><div class="user-chip"><span class="avatar">超</span><span><span class="name">刘超</span><br><span class="role">系统管理员</span></span></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar" data-od-id="topbar">
+      <h1>发布管理</h1>
+      <div class="topbar-search">⌕ <input type="search" placeholder="在所选空间内搜索文档名称及正文…"></div>
+    </header>
+
+    <main class="content">
+      <div class="page-head" data-od-id="pub-head">
+        <div><h2>发布管理</h2><p class="sub">发布对象是知识空间 · 驳回版本不对用户开放 · 重审期间沿用上一个已审版本</p></div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="发布状态" data-od-id="pub-tabs">
+        <button class="tab" type="button" role="tab" data-status="pending" aria-selected="true" aria-controls="release-list">待审核</button>
+        <button class="tab" type="button" role="tab" data-status="rejected" aria-selected="false" aria-controls="release-list" tabindex="-1">已驳回</button>
+        <button class="tab" type="button" role="tab" data-status="published" aria-selected="false" aria-controls="release-list" tabindex="-1">已发布</button>
+        <button class="tab" type="button" role="tab" data-status="withdrawn" aria-selected="false" aria-controls="release-list" tabindex="-1">已撤回</button>
+      </div>
+      <p class="text-sm muted mb-4" id="release-message" role="status"></p>
+
+      <div class="table-wrap" id="release-list" data-od-id="pub-table" role="tabpanel">
+        <table>
+          <thead><tr><th>空间 / 变更</th><th>类型</th><th>提交人</th><th>提交时间</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="release-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="notice notice-info mt-4" data-od-id="pub-rule">
+        <span class="n-icon">ℹ</span>
+        <span><strong>审核规则</strong>：审核通过后登录且获权用户才可访问；在通过前，未审变更不出现在用户搜索、问答和引用中；撤回后原已授权用户也不能再查看，旧链接同样失效。</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- 发布操作抽屉 -->
+<div class="drawer-mask" id="drawer-mask" hidden></div>
+<aside class="detail-drawer" id="drawer" data-od-id="review-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden>
+  <div class="flex" style="margin-bottom:var(--space-5);">
+    <h2 id="drawer-title" style="font-size:var(--text-lg); font-weight:700;"></h2><span class="grow"></span>
+    <button class="btn btn-sm" id="drawer-close" type="button">✕ 关闭</button>
+  </div>
+  <div id="drawer-body"></div>
+</aside>
+
+<template id="review-template">
+  <div class="steps mb-4">
+    <span class="step done"><span class="s-idx">✓</span><span data-submitted></span></span>
+    <span class="step-arrow">→</span>
+    <span class="step now"><span class="s-idx">2</span>管理员审核</span>
+    <span class="step-arrow">→</span>
+    <span class="step"><span class="s-idx">3</span>通过后生效</span>
+  </div>
+  <div class="card-head"><h3>变更内容</h3><span class="hint" data-request-reason></span></div>
+  <div class="table-wrap mb-4">
+    <table>
+      <thead><tr><th>文档</th><th>变更</th><th>当前用户可见</th></tr></thead>
+      <tbody data-changes></tbody>
+    </table>
+  </div>
+  <form>
+    <div class="field">
+      <label for="review-reason">审核意见</label>
+      <textarea id="review-reason" maxlength="500" placeholder="通过可留空；驳回时请填写具体原因…"></textarea>
+    </div>
+    <div class="flex">
+      <span class="grow"></span>
+      <button class="btn btn-danger" type="submit" value="rejected">驳回</button>
+      <button class="btn btn-primary" type="submit" value="approved" formnovalidate>通过并发布</button>
+    </div>
+  </form>
+</template>
+
+<script src="prototype-release.js"></script>
+<script>
+(() => {
+  const api = window.prototypeRelease;
+  const { element, badge, link } = api;
+  const tabs = [...document.querySelectorAll('[data-status]')];
+  const rows = document.getElementById('release-rows');
+  const message = document.getElementById('release-message');
+  const app = document.querySelector('.app');
+  const drawer = document.getElementById('drawer');
+  const mask = document.getElementById('drawer-mask');
+  const close = document.getElementById('drawer-close');
+  const title = document.getElementById('drawer-title');
+  const body = document.getElementById('drawer-body');
+  let selected = 'pending';
+  let openerHash = '';
+
+  function render() {
+    const spaces = api.list();
+    const lists = {
+      pending: spaces.filter((space) => api.requestStatus(space) === 'pending'),
+      rejected: spaces.filter((space) => api.requestStatus(space) === 'rejected'),
+      published: spaces.filter((space) => space.release && !space.withdrawal),
+      withdrawn: spaces.filter((space) => space.withdrawal)
+    };
+    for (const tab of tabs) {
+      const status = tab.dataset.status;
+      tab.id = `tab-${status}`;
+      tab.textContent = `${api.STATUS[status][0]}（${lists[status].length}）`;
+      tab.setAttribute('aria-selected', String(status === selected));
+      tab.tabIndex = status === selected ? 0 : -1;
+    }
+    document.getElementById('release-list').setAttribute('aria-labelledby', `tab-${selected}`);
+    rows.replaceChildren();
+    for (const space of lists[selected]) {
+      const active = space.release && !space.withdrawal ? space.release : null;
+      const request = space.request;
+      const isRequest = selected === 'pending' || selected === 'rejected';
+      const row = element('tr');
+      const name = element('td');
+      name.append(element('div', 'row-title', space.name), element('div', 'row-sub',
+        isRequest ? request.reason : `${space.release.revision} · ${space.release.documents} 份文档`));
+      const type = element('td');
+      type.append(isRequest ? badge(space.release ? '变更重审' : '首次发布', space.release ? 'badge-warn' : 'badge-info') : '空间发布');
+      const date = selected === 'withdrawn' ? space.withdrawal.at : isRequest ? request.at : space.release.at;
+      const status = element('td');
+      status.append(badge(...api.STATUS[selected], true));
+      const detail = {
+        pending: active ? `重审期间用户沿用 ${active.revision}` : '通过前对用户不可见',
+        rejected: active ? `驳回版本未开放 · 继续沿用 ${active.revision}` : '驳回版本未开放',
+        published: `现行 ${active?.revision ?? ''}`,
+        withdrawn: '已授权用户及旧链接不再可访问'
+      };
+      status.append(element('div', 'row-sub', detail[selected]));
+      const action = element('td');
+      const buttons = element('div', 'flex flex-wrap');
+      if (selected === 'pending') buttons.append(link('审核', `#review-${space.id}`, 'btn btn-sm btn-primary'),
+        link('查看对比', `#compare-${space.id}`));
+      if (selected === 'rejected') buttons.append(link('查看驳回原因', `#rejected-review-${space.id}`));
+      if (selected === 'published') buttons.append(link('查看发布', `#release-${space.id}`), link('撤回发布', `#withdraw-${space.id}`, 'btn btn-sm btn-danger'));
+      if (selected === 'withdrawn') buttons.append(link('查看撤回', `#withdrawn-${space.id}`));
+      action.append(buttons);
+      row.append(name, type, element('td', '', space.owner), element('td', 'num', date), status, action);
+      rows.append(row);
+    }
+    if (!rows.children.length) {
+      const row = element('tr');
+      const cell = element('td', 'muted', '此状态暂无记录');
+      cell.colSpan = 6;
+      row.append(cell);
+      rows.append(row);
+    }
+    api.refreshNav();
+  }
+
+  function hideDrawer(restoreFocus) {
+    const wasOpen = !drawer.hidden;
+    drawer.hidden = true;
+    mask.hidden = true;
+    app.inert = false;
+    if (restoreFocus && wasOpen) {
+      const original = [...rows.querySelectorAll('a')].find((anchor) => anchor.getAttribute('href') === openerHash);
+      (original ?? tabs.find((tab) => tab.dataset.status === selected)).focus();
+    }
+    openerHash = '';
+  }
+  function dismiss() {
+    api.setHash(selected === 'pending' ? '' : `#${selected}`);
+    hideDrawer(true);
+  }
+  function announce(text, status) {
+    selected = status;
+    render();
+    dismiss();
+    message.textContent = text;
+  }
+  function timelineItem(label, text, kind) {
+    const item = element('div', `tl-item ${kind}`);
+    item.append(element('div', 'tl-t', label), element('div', 'tl-d', text));
+    return item;
+  }
+  function showComparison(space, editable) {
+    const request = space.request;
+    const data = document.getElementById('review-template').content.cloneNode(true);
+    data.querySelector('[data-submitted]').textContent = `提交（${space.owner} ${request.at}）`;
+    data.querySelector('[data-request-reason]').textContent = request.reason;
+    const previous = api.getRelease(space.id);
+    for (const item of request.changes) {
+      const row = element('tr');
+      const kind = element('td');
+      kind.append(badge(item.kind === 'metadata' ? '资料与政策' : item.detail, item.kind === 'revision' ? 'badge-warn' : 'badge-info'));
+      row.append(element('td', '', item.name), kind, element('td', 'text-sm',
+        previous && ['revision', 'metadata'].includes(item.kind) ? `仅旧版（沿用 ${previous.revision}）` : '否（未审不可见）'));
+      if (item.kind === 'metadata' && item.detail !== '首次发布') row.cells[0].append(element('div', 'row-sub', item.detail));
+      data.querySelector('[data-changes]').append(row);
+    }
+    const form = data.querySelector('form');
+    if (!editable) form.remove();
+    else {
+      const input = form.querySelector('textarea');
+      input.addEventListener('input', () => input.setCustomValidity(''));
+      const expected = JSON.stringify(request);
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!event.submitter) return;
+        const decision = event.submitter.value;
+        if (decision === 'rejected' && !input.value.trim()) {
+          input.setCustomValidity('驳回时请填写具体原因。');
+          input.reportValidity();
+          input.setCustomValidity('');
+          return;
+        }
+        if (!api.review(space.id, decision, input.value, expected)) {
+          announce('该申请已变化，请重新打开审核。', 'pending');
+          return;
+        }
+        const approved = decision === 'approved';
+        announce(`模拟结果：${space.name}${approved ? '已通过并发布' : '已驳回'}`, approved ? 'published' : 'rejected');
+      });
+    }
+    body.append(data);
+  }
+  function showRejected(space) {
+    const result = space.request.outcome;
+    const box = element('div', 'reject-box');
+    box.dataset.odId = 'reject-reasons';
+    const reasons = element('ul');
+    for (const reason of result.reasons) reasons.append(element('li', '', reason));
+    box.append(element('strong', '', `${result.at} 由 ${result.by} 驳回 · 本次变更未开放`), reasons);
+    const timeline = element('div', 'timeline mt-6');
+    timeline.append(timelineItem(`${space.owner} 提交发布申请`, space.request.at, 'done'),
+      timelineItem(`${result.by} 驳回`, `${result.at} · ${api.getRelease(space.id) ? '保留上一次发布' : '空间仍未发布'}`, 'bad'),
+      timelineItem(`${space.owner} 修改中`, '修改完成后可重新提交审核', 'now'));
+    body.append(box, timeline, link('切换为提交人处理', `knowledge.html#resubmit-${space.id}`, 'btn mt-4'));
+  }
+  function showWithdraw(space) {
+    const warning = element('div', 'notice notice-warn mb-4', `确认撤回 ${space.name}（${space.release.revision}）？撤回后，原已获权用户、旧文档链接和历史引用将无法再访问该空间的内容。`);
+    const actions = element('div', 'flex');
+    const cancel = element('button', 'btn', '取消');
+    const confirm = element('button', 'btn btn-danger', '确认撤回');
+    cancel.addEventListener('click', dismiss);
+    confirm.addEventListener('click', () => {
+      if (api.withdraw(space.id, space.release.revision)) announce(`模拟结果：${space.name}已撤回`, 'withdrawn');
+      else announce('发布状态已变化，请重新确认。', 'published');
+    });
+    actions.append(element('span', 'grow'), cancel, confirm);
+    body.append(warning, actions);
+  }
+  function route() {
+    const hash = location.hash;
+    const aliases = { '#review': '#review-travel', '#rejected-review': '#rejected-review-vendor', '#rejected': '#rejected' };
+    const target = (aliases[hash] ?? hash).slice(1);
+    const match = /^(rejected-review|review|compare|release|withdrawn|withdraw)-([a-z0-9-]+)$/.exec(target);
+    if (!match) {
+      selected = tabs.some((tab) => tab.dataset.status === target) ? target : 'pending';
+      hideDrawer(false);
+      render();
+      return;
+    }
+    const [, mode, id] = match;
+    const space = api.getSpace(id);
+    const status = mode === 'rejected-review' ? 'rejected' : ['review', 'compare'].includes(mode) ? 'pending'
+      : mode === 'withdrawn' ? 'withdrawn' : 'published';
+    const valid = space && (status === 'pending' || status === 'rejected' ? api.requestStatus(space) === status
+      : status === 'withdrawn' ? space.withdrawal : api.isAvailable(id));
+    selected = status;
+    render();
+    if (!valid) {
+      dismiss();
+      message.textContent = '该记录已变化，请在列表中重新选择。';
+      return;
+    }
+    const labels = { review: '审核', compare: '查看对比', 'rejected-review': '驳回原因', release: '发布详情', withdraw: '撤回确认', withdrawn: '撤回记录' };
+    openerHash = `#${target}`;
+    title.textContent = `${labels[mode]} · ${space.name}`;
+    body.replaceChildren();
+    if (status === 'pending') showComparison(space, mode === 'review');
+    else if (status === 'rejected') showRejected(space);
+    else if (mode === 'withdraw') showWithdraw(space);
+    else if (mode === 'withdrawn') body.append(element('p', 'notice notice-warn', `${space.withdrawal.at} 由 ${space.withdrawal.by} 撤回 ${space.release.revision}；用户访问和旧链接已失效。`));
+    else {
+      body.append(element('p', 'notice notice-ok mb-4', `${space.release.revision} · 生效 ${space.release.at} · ${space.release.searchable} 份可检索文档`));
+      const reasons = space.request?.outcome?.decision === 'approved' ? space.request.outcome.reasons.filter(Boolean) : [];
+      if (reasons.length) body.append(element('p', 'text-sm', `通过理由：${reasons.join('；')}`));
+    }
+    app.inert = true;
+    mask.hidden = false;
+    drawer.hidden = false;
+    drawer.scrollTop = 0;
+    close.focus();
+  }
+  tabs.forEach((tab, index) => {
+    function select() {
+      message.textContent = '';
+      api.setHash(tab.dataset.status === 'pending' ? '' : `#${tab.dataset.status}`);
+      route();
+    }
+    tab.addEventListener('click', select);
+    tab.addEventListener('keydown', (event) => {
+      const target = { ArrowLeft: (index + tabs.length - 1) % tabs.length, ArrowRight: (index + 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+      if (target === undefined) return;
+      event.preventDefault();
+      tabs[target].click();
+      tabs[target].focus();
+    });
+  });
+  rows.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const anchor = event.target.closest('a[href^="#"]');
+    if (!anchor || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    message.textContent = '';
+    api.setHash(anchor.hash);
+    route();
+  });
+  close.addEventListener('click', dismiss);
+  mask.addEventListener('click', dismiss);
+  document.addEventListener('keydown', (event) => {
+    if (drawer.hidden) return;
+    if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
+    if (event.key !== 'Tab') return;
+    const focusable = [...drawer.querySelectorAll('button, a[href], textarea')];
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+  window.addEventListener('hashchange', route);
+  window.addEventListener('pageshow', () => { if (drawer.hidden) route(); });
+  window.addEventListener(api.CHANGE_EVENT, render);
+  route();
+})();
+</script>
+</body>
+</html>

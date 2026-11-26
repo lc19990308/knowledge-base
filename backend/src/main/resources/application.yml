@@ -1,0 +1,121 @@
+spring:
+  application:
+    name: ai-qa-backend
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:1}
+      connection-timeout: 3000
+      validation-timeout: 2000
+  task:
+    scheduling:
+      pool:
+        size: ${WORKER_SCHEDULER_THREADS:5}
+  flyway:
+    enabled: true
+  session:
+    jdbc:
+      initialize-schema: never
+  sql:
+    init:
+      mode: never
+  servlet:
+    multipart:
+      # 压缩包上传需要更大的单文件上限；普通文档的 10 MB 限制仍由业务代码校验。
+      max-file-size: 64MB
+      max-request-size: 201MB
+  jackson:
+    default-property-inclusion: non_null
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        name: QA_SESSION
+        http-only: true
+        secure: ${COOKIE_SECURE:false}
+        same-site: lax
+aiqa:
+  object-store:
+    type: ${OBJECT_STORE_TYPE:local}
+    local-root: ${OBJECT_STORE_LOCAL_ROOT:${user.home}/.config/ai-qa/objects}
+    s3:
+      bucket: ${OBJECT_STORE_S3_BUCKET:}
+      region: ${OBJECT_STORE_S3_REGION:}
+      endpoint: ${OBJECT_STORE_S3_ENDPOINT:}
+      access-key: ${OBJECT_STORE_S3_ACCESS_KEY:}
+      secret-key: ${OBJECT_STORE_S3_SECRET_KEY:}
+      path-style: ${OBJECT_STORE_S3_PATH_STYLE:true}
+  import:
+    max-batch-bytes: ${IMPORT_MAX_BATCH_BYTES:209715200}
+  cleaning:
+    # 模型打分开关：on=有可用默认模型时调用；off=只出规则分；fake=固定分（隔离 E2E 用）。
+    model-score: ${CLEANING_MODEL_SCORE:on}
+    model-timeout: ${CLEANING_MODEL_TIMEOUT:PT20S}
+    max-batch-bytes: ${CLEANING_MAX_BATCH_BYTES:209715200}
+  security:
+    dev-header-auth:
+      enabled: ${DEV_HEADER_AUTH:false}
+  login:
+    # 登录图形验证码：服务端出题与校验，每次登录都必须带上一枚有效验证码。
+    captcha:
+      ttl: ${CAPTCHA_TTL:PT2M}
+      # 固定验证码仅供隔离 E2E 与集成测试；留空表示每次随机生成，生产必须留空。
+      fixed-code: ${CAPTCHA_FIXED_CODE:}
+  worker:
+    enabled: ${WORKER_ENABLED:true}
+    poll-ms: ${WORKER_POLL_MS:800}
+    maintenance-ms: ${WORKER_MAINTENANCE_MS:60000}
+    capacity:
+      parse: ${WORKER_PARSE_CAPACITY:500}
+      index: ${WORKER_INDEX_CAPACITY:2500}
+      publish: ${WORKER_PUBLISH_CAPACITY:200}
+      answer: ${WORKER_ANSWER_CAPACITY:200}
+      clean: ${WORKER_CLEAN_CAPACITY:200}
+      clean-score: ${WORKER_CLEAN_SCORE_CAPACITY:200}
+      retry-after-seconds: ${WORKER_CAPACITY_RETRY_AFTER_SECONDS:5}
+    concurrency:
+      parse: ${WORKER_PARSE_CONCURRENCY:2}
+      index: ${WORKER_INDEX_CONCURRENCY:1}
+      publish: ${WORKER_PUBLISH_CONCURRENCY:1}
+      answer: ${WORKER_ANSWER_CONCURRENCY:2}
+      clean: ${WORKER_CLEAN_CONCURRENCY:1}
+      clean-score: ${WORKER_CLEAN_SCORE_CONCURRENCY:1}
+  rate-limit:
+    writes-per-minute: ${RATE_LIMIT_WRITES_PER_MINUTE:120}
+    questions-per-minute: ${RATE_LIMIT_QUESTIONS_PER_MINUTE:30}
+    reads:
+      enforce: ${RATE_LIMIT_READS_ENFORCE:false}
+      search-per-minute: ${RATE_LIMIT_SEARCH_PER_MINUTE:120}
+      usage-per-minute: ${RATE_LIMIT_USAGE_PER_MINUTE:120}
+      status-per-minute: ${RATE_LIMIT_STATUS_PER_MINUTE:180}
+  model:
+    provider: ${MODEL_PROVIDER:fake}
+    # 单次流式回答的读取上限：网关慢慢输出也按这个总时长切断，避免占住 worker 线程。
+    stream-timeout: ${MODEL_STREAM_TIMEOUT:PT180S}
+  embedding:
+    # 向量召回：指向 OpenAI 兼容的 /embeddings 端点（本机 llama.cpp 即可）。
+    enabled: ${EMBEDDING_ENABLED:false}
+    url: ${EMBEDDING_URL:http://127.0.0.1:3437/v1}
+    model: ${EMBEDDING_MODEL:qwen3-embed}
+    timeout: ${EMBEDDING_TIMEOUT:PT30S}
+  answer:
+    # 语义相关性判定：model=有默认模型时调用网关；fake=一律通过（隔离 E2E 用）；off=关闭。
+    relevance: ${RELEVANCE_GATE:model}
+    relevance-timeout: ${RELEVANCE_TIMEOUT:PT20S}
+    # 单条 SSE 增量流的最长等待：超过后客户端收到 timeout 事件并回退轮询。
+    stream-timeout-seconds: ${ANSWER_STREAM_TIMEOUT_SECONDS:120}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
