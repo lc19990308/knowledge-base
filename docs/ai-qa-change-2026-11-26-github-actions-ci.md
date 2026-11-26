@@ -46,8 +46,10 @@
   - 前端 CI 成功，质量门禁 + 构建耗时约 72 秒。
   - 后端 CI 失败在 `mvn -B verify`（Postgres service 启动正常），失败用例即上面那条已知的 `PublishingAndWithdrawalIT:312`。
 - 处理方式：按代码意图改用例并补普通成员撤权场景，详见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`。
-- 修复后重跑（同一 main 分支）：**前端 CI 成功 52 秒，后端 CI 成功 1 分 38 秒**（后端 128 项测试全过）。
-- Action 版本：运行日志提示 Node 20 已弃用，已统一升级到最新主版本——`actions/checkout@v7`、`actions/setup-java@v6`、`actions/setup-node@v7`、`actions/upload-artifact@v7`（升级后再次跑绿）。
+- 修复后重跑（同一 main 分支）：前端 CI 成功 52 秒，后端 CI 成功 1 分 38 秒（后端 128 项测试全过）。
+- Action 版本：运行日志提示 Node 20 已弃用，已统一升级到最新主版本——`actions/checkout@v7`、`actions/setup-java@v6`、`actions/setup-node@v7`、`actions/upload-artifact@v7`。
+- 升级后最终一次运行（commit `8dcc048`）：**后端 CI 成功 1 分 30 秒，前端 CI 成功 1 分 12 秒**，日志中不再有 Node 20 弃用提示。
+- 产物核验（同一运行的 artifacts）：`backend-jar-8dcc048`（约 71 MB）、`frontend-dist-8dcc048`（约 723 KB），短 SHA 与 commit 一致。
 
 ## 遗留问题
 
