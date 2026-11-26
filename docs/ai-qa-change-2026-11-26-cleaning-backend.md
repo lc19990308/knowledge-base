@@ -56,7 +56,7 @@
 cd backend
 mvn -o -DskipTests compile
 mvn -o test -Dtest='CleaningRulesTest,CleaningZipTest,CleaningModelScorerTest'
-IT_DB_URL=jdbc:postgresql://127.0.0.1:5432/ai_qa_it IT_DB_USER=liuchao IT_DB_PASSWORD= \
+IT_DB_URL=jdbc:postgresql://127.0.0.1:5432/ai_qa_it IT_DB_USER=your_db_user IT_DB_PASSWORD= \
   mvn -o test
 ```
 

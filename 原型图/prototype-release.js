@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = 'knowledge-base.prototype-release.v1';
   const CHANGE_EVENT = 'prototype-release-change';
-  const ADMIN = '刘超';
+  const ADMIN = '张明';
   const FILES = Object.freeze({
     v2: '差旅费用报销管理办法.pdf', v3: '差旅费用报销管理办法-v3.pdf', v4: '差旅费用报销管理办法-v4.pdf',
     crossBorder: '跨境差旅补充规定.docx', subsidy: '差旅补贴实施细则.pdf', scan: '历史报销单据样式表.pdf',

@@ -26,7 +26,17 @@
 
 `.github/pull_request_template.md`：把项目既有硬约束变成勾选项——docs 变更记录、SQL 追加式变更与字段中文注释、OpenAPI 同步、本地 lint/typecheck/format、`mvn verify`、真实运行证据、无密钥与本机专属配置。
 
-### 3. 密钥与环境
+### 3. 仓库可见性与脱敏（2026-11-26 追加）
+
+GitHub Free 的**私有仓库不支持分支保护与 Rulesets**（两种 API 都返回 403：`Upgrade to GitHub Pro or make this repository public`）。为了拿到门禁能力，仓库由 private 转为 public，公开前做了 HEAD 级脱敏：
+
+- `docs/ai-qa-change-2026-11-26-cleaning-backend.md`：本机数据库用户名 → `your_db_user`。
+- `docs/e2e-live/edges.jsonl`：本机绝对路径 → `<repo>`（逐行保持合法 JSON）。
+- `原型图/*.html`、`原型图/prototype-release.js`、`docs/ai-qa-frontend-deviation-report.md`：mock 里的真实姓名与邮箱 → 虚构示例「张明 / zhangming@company.com」。
+
+复核结果：`git grep` 已无真实姓名、本机用户名与 `/Users/` 路径。未重写历史（旧提交仍在历史里保留原内容，公开前已知悉并接受）。密钥扫描无命中；代码中的 `admin/admin123`、`user/user1234` 是内置**本地引导默认密码**，启动时打印告警要求生产覆盖。
+
+### 4. 密钥与环境
 
 - 本次不引入任何仓库 Secret：Postgres 用 job 内一次性 service，账号密码只在该 job 内有效。
 - 后续加 CD 时，部署凭据只进 GitHub Secrets / environment，不写进 yml。
@@ -42,7 +52,7 @@
   唯一失败是 `PublishingAndWithdrawalIT.unapprovedContentStaysHiddenAndWithdrawalMasksHistory`（第 312 行，撤掉管理员成员关系后仍能读引用，期望 404）。
   该行为来自 `QuestionRepository.paragraphStillAuthorized` 对 `SYSTEM_ADMIN` 的显式放行，属于代码既有行为，与本次 CI 改动无关；`docs/ai-qa-change-2026-11-26-cleaning-backend.md` 已把它记录为已知失败。
 - 工作流 YAML 已用 `yaml.safe_load` 解析校验，jobs/triggers 正常。
-- 远端首跑（私有仓库 https://github.com/lc19990308/knowledge-base）：
+- 远端首跑（仓库 https://github.com/lc19990308/knowledge-base）：
   - 前端 CI 成功，质量门禁 + 构建耗时约 72 秒。
   - 后端 CI 失败在 `mvn -B verify`（Postgres service 启动正常），失败用例即上面那条已知的 `PublishingAndWithdrawalIT:312`。
 - 处理方式：按代码意图改用例并补普通成员撤权场景，详见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`。
