@@ -118,6 +118,33 @@ class PublishingAndWithdrawalIT {
         .update();
   }
 
+  /** 给指定账号授予空间只读成员关系；granted_by 记为管理员，满足 NOT NULL 约束。 */
+  private void grantMembership(String spaceId, String subject) {
+    jdbc.sql(
+            """
+            INSERT INTO space_member (space_id, user_id, can_read, can_maintain, granted_by)
+            SELECT :space, member.id, true, false, admin.id
+            FROM app_user member, app_user admin
+            WHERE member.subject = :subject AND admin.subject = :admin
+            """)
+        .param("space", java.util.UUID.fromString(spaceId))
+        .param("subject", subject)
+        .param("admin", ADMIN)
+        .update();
+  }
+
+  /** 撤销空间成员关系，用于验证撤权后历史引用不再可读。 */
+  private void revokeMembership(String spaceId, String subject) {
+    jdbc.sql(
+            """
+            DELETE FROM space_member
+            WHERE space_id = :space AND user_id = (SELECT id FROM app_user WHERE subject = :subject)
+            """)
+        .param("space", java.util.UUID.fromString(spaceId))
+        .param("subject", subject)
+        .update();
+  }
+
   private static MockMultipartFile markdown(String name, String body) {
     return new MockMultipartFile("files", name, "text/markdown", body.getBytes(StandardCharsets.UTF_8));
   }
@@ -297,9 +324,9 @@ class PublishingAndWithdrawalIT {
     assertThat(JsonPath.<String>read(noEvidence, "$.data.paragraphs[0].status")).isEqualTo("VISIBLE");
     assertThat(JsonPath.<List<String>>read(noEvidence, "$.data.paragraphs[0].citations")).isEmpty();
 
-    // Simulate toggling membership in the isolated schema without changing the published snapshot.
-    for (boolean canRead : List.of(false, true)) {
-      String membershipSql = canRead ? """
+    // 系统管理员在 paragraphStillAuthorized 里有显式放行：撤掉成员关系仍能读引用、正文与检索。
+    for (boolean member : List.of(false, true)) {
+      String membershipSql = member ? """
           INSERT INTO space_member (space_id, user_id, can_read, can_maintain, granted_by)
           SELECT :space, id, true, true, id FROM app_user WHERE subject = :subject
           """ : """
@@ -308,15 +335,62 @@ class PublishingAndWithdrawalIT {
           """;
       jdbc.sql(membershipSql).param("space", java.util.UUID.fromString(spaceId))
           .param("subject", ADMIN).update();
-      call(get("/api/v1/citations/{citationId}", citationId))
-          .andExpect(canRead ? status().isOk() : status().isNotFound());
-      if (!canRead) {
-        call(get("/api/v1/citations/{citationId}/content", citationId)).andExpect(status().isNotFound());
-        // 检索已按管理员口径放开：成员关系不再限制系统管理员的使用侧读取。
-        call(get("/api/v1/spaces/{spaceId}/search", spaceId).param("q", "十五个工作日"))
-            .andExpect(status().isOk());
-      }
+      call(get("/api/v1/citations/{citationId}", citationId)).andExpect(status().isOk());
+      call(get("/api/v1/citations/{citationId}/content", citationId)).andExpect(status().isOk());
+      call(get("/api/v1/spaces/{spaceId}/search", spaceId).param("q", "十五个工作日"))
+          .andExpect(status().isOk());
     }
+
+    // 普通成员对照：同一空间、同一助手、同一批证据，撤权后引用与正文都必须 404。
+    grantMembership(spaceId, READER);
+    String readerConversationId =
+        JsonPath.read(
+            body(
+                callAs(READER,
+                        post("/api/v1/conversations")
+                            .header("Idempotency-Key", "it-conversation-reader")
+                            .contentType("application/json")
+                            .content("{\"assistantId\":\"%s\"}".formatted(assistantId)))
+                    .andExpect(status().isCreated())
+                    .andReturn()),
+            "$.data.conversationId");
+    String readerQuestionId =
+        JsonPath.read(
+            body(
+                callAs(READER,
+                        post("/api/v1/conversations/{conversationId}/questions", readerConversationId)
+                            .header("Idempotency-Key", "it-question-reader")
+                            .contentType("application/json")
+                            .content("{\"text\":\"国内差旅报销时限是多少？\"}"))
+                    .andExpect(status().isAccepted())
+                    .andReturn()),
+            "$.data.questionId");
+    answerWorker.poll();
+    String readerCitationId =
+        JsonPath.read(
+            body(
+                callAs(READER, get("/api/v1/questions/{questionId}", readerQuestionId))
+                    .andExpect(status().isOk())
+                    .andReturn()),
+            "$.data.paragraphs[0].citations[0].citationId");
+    callAs(READER, get("/api/v1/citations/{citationId}", readerCitationId))
+        .andExpect(status().isOk());
+    callAs(READER, get("/api/v1/citations/{citationId}/content", readerCitationId))
+        .andExpect(status().isOk());
+    // 撤权：成员关系删除后，历史引用的预览、原件与段落本身都不再对普通账号可读。
+    revokeMembership(spaceId, READER);
+    callAs(READER, get("/api/v1/citations/{citationId}", readerCitationId))
+        .andExpect(status().isNotFound());
+    callAs(READER, get("/api/v1/citations/{citationId}/content", readerCitationId))
+        .andExpect(status().isNotFound());
+    assertThat(
+            JsonPath.<String>read(
+                body(
+                    callAs(READER, get("/api/v1/questions/{questionId}", readerQuestionId))
+                        .andExpect(status().isOk())
+                        .andReturn()),
+                "$.data.paragraphs[0].status"))
+        .isEqualTo("MASKED");
 
     // Keep the first conversation for withdrawal checks and delete a second while its evidence is valid.
     String deletedConversationId = JsonPath.read(body(call(post("/api/v1/conversations")

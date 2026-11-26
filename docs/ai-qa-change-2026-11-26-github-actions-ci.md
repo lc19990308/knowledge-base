@@ -42,10 +42,14 @@
   唯一失败是 `PublishingAndWithdrawalIT.unapprovedContentStaysHiddenAndWithdrawalMasksHistory`（第 312 行，撤掉管理员成员关系后仍能读引用，期望 404）。
   该行为来自 `QuestionRepository.paragraphStillAuthorized` 对 `SYSTEM_ADMIN` 的显式放行，属于代码既有行为，与本次 CI 改动无关；`docs/ai-qa-change-2026-11-26-cleaning-backend.md` 已把它记录为已知失败。
 - 工作流 YAML 已用 `yaml.safe_load` 解析校验，jobs/triggers 正常。
+- 远端首跑（私有仓库 https://github.com/lc19990308/knowledge-base）：
+  - 前端 CI 成功，质量门禁 + 构建耗时约 72 秒。
+  - 后端 CI 失败在 `mvn -B verify`（Postgres service 启动正常），失败用例即上面那条已知的 `PublishingAndWithdrawalIT:312`。
+- 处理方式：按代码意图改用例并补普通成员撤权场景，详见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`；同时把 `actions/setup-java` 从 v4 升到 v5（v4 已提示弃用）。
 
 ## 遗留问题
 
-- **已知失败用例挡门禁**：`PublishingAndWithdrawalIT:312` 与当前「管理员放行」实现冲突，首次 CI 会红。需要决定是改用例（按管理员放行更新断言）还是改实现。
+- **已知失败用例已处理**：`PublishingAndWithdrawalIT:312` 按「管理员放行」语义更新，并补了普通成员撤权用例；本地全量 128 项全过（见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`）。
 - **无 CD**：部署目标未定，仓库里没有 Dockerfile/部署脚本；确定目标后再补 deploy job 与 environment 审批。
 - **无覆盖率阈值**：后端未接 JaCoCo，前端无单测框架，暂不设覆盖率门禁；接入后阈值需与团队约定。
 - **E2E 未进流水线**：见上文，需要改造 `e2e/stack.mjs` 的离线构建依赖。
