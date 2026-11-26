@@ -45,7 +45,9 @@
 - 远端首跑（私有仓库 https://github.com/lc19990308/knowledge-base）：
   - 前端 CI 成功，质量门禁 + 构建耗时约 72 秒。
   - 后端 CI 失败在 `mvn -B verify`（Postgres service 启动正常），失败用例即上面那条已知的 `PublishingAndWithdrawalIT:312`。
-- 处理方式：按代码意图改用例并补普通成员撤权场景，详见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`；同时把 `actions/setup-java` 从 v4 升到 v5（v4 已提示弃用）。
+- 处理方式：按代码意图改用例并补普通成员撤权场景，详见 `docs/ai-qa-change-2026-11-26-citation-access-test.md`。
+- 修复后重跑（同一 main 分支）：**前端 CI 成功 52 秒，后端 CI 成功 1 分 38 秒**（后端 128 项测试全过）。
+- Action 版本：运行日志提示 Node 20 已弃用，已统一升级到最新主版本——`actions/checkout@v7`、`actions/setup-java@v6`、`actions/setup-node@v7`、`actions/upload-artifact@v7`（升级后再次跑绿）。
 
 ## 遗留问题
 
