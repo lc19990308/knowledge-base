@@ -1,0 +1,28 @@
+# ---------- 系统与编辑器噪声 ----------
+.DS_Store
+.idea/
+.vscode/
+
+# ---------- 依赖与构建产物（子目录另有规则，这里兜底根级）----------
+node_modules/
+dist/
+target/
+*.tsbuildinfo
+*.local
+
+# ---------- 本机缓存与验证工作目录：体积大、只在当前机器有意义 ----------
+.cache/
+.contract-verify.*/
+.e2e-run.*/
+.e2e-live-work/
+backend/.qa-verify.*/
+backend/.model-options-build.*/
+__pycache__/
+*.pyc
+
+# ---------- 日志、临时文件与本地专属配置 ----------
+*.log
+*.tmp
+.env
+.env.*
+AGENTS.local.md
