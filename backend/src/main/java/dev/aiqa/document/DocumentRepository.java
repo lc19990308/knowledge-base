@@ -12,9 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class DocumentRepository {
 
   private final JdbcClient jdbc;
+  private final dev.aiqa.search.VectorIndex vectors;
 
-  public DocumentRepository(JdbcClient jdbc) {
+  public DocumentRepository(JdbcClient jdbc, dev.aiqa.search.VectorIndex vectors) {
     this.jdbc = jdbc;
+    this.vectors = vectors;
   }
 
   public record DocumentRow(
@@ -159,25 +161,36 @@ public class DocumentRepository {
         .param("space", spaceId)
         .param("doc", documentVersionId)
         .update();
+    // 启用 pgvector 时同时写 vector 列供 ANN 索引使用；real[] 保留一个版本周期，便于回退。
+    boolean ann = vectors.ann();
+    String vecColumn = ann ? ", embedding_vec" : "";
+    String vecValue = ann ? ", CAST(:embeddingVec AS vector)" : "";
+    String insert =
+        """
+        INSERT INTO document_chunk
+          (id, space_id, document_version_id, ordinal, body, source_location, search_vector,
+           embedding%s)
+        VALUES (:id, :space, :doc, :ordinal, :body, :location, to_tsvector('simple', :vector),
+                CAST(:embedding AS real[])%s)
+        """
+            .formatted(vecColumn, vecValue);
     int ordinal = 0;
     for (IndexChunk chunk : chunks) {
-      jdbc.sql(
-              """
-              INSERT INTO document_chunk
-                (id, space_id, document_version_id, ordinal, body, source_location, search_vector,
-                 embedding)
-              VALUES (:id, :space, :doc, :ordinal, :body, :location, to_tsvector('simple', :vector),
-                      CAST(:embedding AS real[]))
-              """)
-          .param("id", UUID.randomUUID())
-          .param("space", spaceId)
-          .param("doc", documentVersionId)
-          .param("ordinal", ordinal++)
-          .param("body", chunk.body())
-          .param("location", chunk.sourceLocation())
-          .param("vector", chunk.searchVector() == null ? "" : chunk.searchVector())
-          .param("embedding", dev.aiqa.search.EmbeddingClient.literal(chunk.embedding()))
-          .update();
+      var spec =
+          jdbc.sql(insert)
+              .param("id", UUID.randomUUID())
+              .param("space", spaceId)
+              .param("doc", documentVersionId)
+              .param("ordinal", ordinal++)
+              .param("body", chunk.body())
+              .param("location", chunk.sourceLocation())
+              .param("vector", chunk.searchVector() == null ? "" : chunk.searchVector())
+              .param("embedding", dev.aiqa.search.EmbeddingClient.literal(chunk.embedding()));
+      if (ann) {
+        spec = spec.param(
+            "embeddingVec", dev.aiqa.search.EmbeddingClient.vectorLiteral(chunk.embedding()));
+      }
+      spec.update();
     }
   }
 

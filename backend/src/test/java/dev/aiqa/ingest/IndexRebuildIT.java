@@ -41,7 +41,10 @@ class IndexRebuildIT {
       JdbcClient jdbc = JdbcClient.create(source);
       context.register(TransactionConfig.class);
       context.registerBean(DataSourceTransactionManager.class, () -> new DataSourceTransactionManager(source));
-      context.registerBean(DocumentRepository.class, () -> new DocumentRepository(jdbc));
+      context.registerBean(
+        DocumentRepository.class,
+        () -> new DocumentRepository(
+            jdbc, new dev.aiqa.search.VectorIndex(jdbc, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())));
       context.registerBean(JobRepository.class, () -> new JobRepository(jdbc, 500, 2500, 200, 200, 200, 200, 200, 50, 5, 2, 1, 1, 2, 1, 1));
       context.refresh();
       var documents = context.getBean(DocumentRepository.class);

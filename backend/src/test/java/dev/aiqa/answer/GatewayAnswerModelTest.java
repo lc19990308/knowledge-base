@@ -202,6 +202,35 @@ class GatewayAnswerModelTest {
         .hasMessageContaining("模型网关返回 HTTP 429");
   }
 
+  @Test
+  void answerWithoutCitationMarkersDoesNotBackfillEveryEvidence() throws Exception {
+    server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/v1/chat/completions", exchange -> {
+      exchange.getRequestBody().readAllBytes();
+      byte[] response = "{\"choices\":[{\"message\":{\"content\":\"根据资料，返程后十五个工作日内提交。\"}}]}"
+          .getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, response.length);
+      exchange.getResponseBody().write(response);
+      exchange.close();
+    });
+    server.start();
+    MockEnvironment environment = new MockEnvironment()
+        .withProperty("aiqa.model.credentials.vault_openai", "test-key");
+    OpenAiCompatibleAnswerModel adapter =
+        new OpenAiCompatibleAnswerModel(TIMEOUT, TIMEOUT, environment);
+
+    AnswerModel.Rendered rendered = adapter.ask(
+        baseUrl("/v1"), "no-cite-model", "vault:openai", "报销时限？", "模板",
+        List.of(
+            new AnswerModel.EvidenceSource("s", "p", 1, "d", "policy.txt", "证据一", "EFFECTIVE"),
+            new AnswerModel.EvidenceSource("s", "p", 1, "e", "policy2.txt", "证据二", "EFFECTIVE")),
+        delta -> {});
+
+    // 模型没写 [n] 时引用必须为空：回填全部证据会让「引用可核对」静默失真。
+    assertThat(rendered.citedEvidenceIndexes()).isEmpty();
+  }
+
   private String baseUrl(String path) {
     return "http://127.0.0.1:" + server.getAddress().getPort() + path;
   }

@@ -9,7 +9,8 @@ import java.util.List;
  * 例如「差旅早餐可以报销多少元」会命中报销时限条款。这里把这一步交给已配置的模型：
  * 模型认为资料不能支撑时，回答按无依据返回且不写引用。
  *
- * <p>判定不可用时按<b>失败开放</b>处理（继续回答），避免判定服务抖动把正常问答一起拦掉。
+ * <p>判定不可用时的行为由 {@code aiqa.answer.relevance-failure} 决定：默认 {@code closed}
+ * 按无依据拒答（政策场景不让可能编造的回答过关），{@code open} 继续回答以保可用性。
  */
 public interface RelevanceJudge {
 

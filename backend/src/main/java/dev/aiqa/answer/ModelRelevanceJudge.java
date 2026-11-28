@@ -24,8 +24,9 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>{@code off} —— 关闭判定。
  * </ul>
  *
- * <p>任何失败（超时、HTTP 错误、响应无法解析）都按失败开放处理，并且只用一行 JSON 决策，
- * 最多读 8 条证据、每条 600 字，避免把整篇文档再发一遍。
+ * <p>判定不可用（超时、HTTP 错误、响应无法解析）时按 {@code aiqa.answer.relevance-failure}
+ * 处理：默认 {@code closed} 拒答，{@code open} 放行。只用一行 JSON 决策，
+ * 证据条数与单条长度与回答共用配置（默认 10 条 × 800 字），避免把整篇文档再发一遍。
  */
 @Component
 public class ModelRelevanceJudge implements RelevanceJudge {
@@ -33,8 +34,10 @@ public class ModelRelevanceJudge implements RelevanceJudge {
   private static final org.slf4j.Logger log =
       org.slf4j.LoggerFactory.getLogger(ModelRelevanceJudge.class);
 
-  private static final int MAX_EVIDENCE = 8;
-  private static final int MAX_CHARS = 600;
+  /** 判定与生成看同一批证据：条数与单条长度都由配置决定，默认 10 条 × 800 字。 */
+  private final int maxEvidence;
+
+  private final int maxChars;
 
   static final String SYSTEM_PROMPT =
       """
@@ -50,6 +53,8 @@ public class ModelRelevanceJudge implements RelevanceJudge {
   private final io.micrometer.core.instrument.MeterRegistry meters;
   private final String mode;
   private final Duration timeout;
+  /** 判定不可用时是否放行：closed（默认）按无依据拒答，open 继续回答。 */
+  private final String failureMode;
   private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
   private final ObjectMapper mapper = new ObjectMapper();
 
@@ -57,14 +62,21 @@ public class ModelRelevanceJudge implements RelevanceJudge {
       Environment environment,
       io.micrometer.core.instrument.MeterRegistry meters,
       @Value("${aiqa.answer.relevance:model}") String mode,
-      @Value("${aiqa.answer.relevance-timeout:PT20S}") Duration timeout) {
+      @Value("${aiqa.answer.relevance-timeout:PT20S}") Duration timeout,
+      @Value("${aiqa.answer.relevance-failure:closed}") String failureMode,
+      @Value("${aiqa.answer.evidence-max-count:10}") int maxEvidence,
+      @Value("${aiqa.answer.evidence-max-chars:800}") int maxChars) {
     this.environment = environment;
     this.meters = meters;
     this.mode = mode == null ? "model" : mode.strip().toLowerCase(java.util.Locale.ROOT);
     this.timeout = timeout;
+    this.failureMode =
+        failureMode == null ? "closed" : failureMode.strip().toLowerCase(java.util.Locale.ROOT);
+    this.maxEvidence = Math.max(1, maxEvidence);
+    this.maxChars = Math.max(200, maxChars);
   }
 
-  /** 判定候选证据能否支撑这次提问；未配置模型或判定失败时一律放行。 */
+  /** 判定候选证据能否支撑这次提问；未配置模型时旁路，判定不可用时按配置放行或拒答。 */
   @Override
   public Verdict judge(Model model, String question, List<String> evidenceTexts) {
     if ("off".equals(mode)) {
@@ -95,16 +107,33 @@ public class ModelRelevanceJudge implements RelevanceJudge {
       }
       HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() / 100 != 2) {
-        return counted(Verdict.unavailable("HTTP " + response.statusCode()));
+        return counted(unavailable("HTTP " + response.statusCode()));
       }
       return counted(parse(response.body(), model.protocol()));
     } catch (RuntimeException | java.io.IOException | InterruptedException ex) {
       if (ex instanceof InterruptedException) {
         Thread.currentThread().interrupt();
       }
-      log.warn("相关性判定失败，按失败开放继续回答：{}", ex.toString());
-      return counted(Verdict.unavailable("判定调用失败"));
+      log.warn(
+          "相关性判定失败（failure={}，{}）：{}",
+          failureMode,
+          "open".equals(failureMode) ? "按失败开放继续回答" : "按无依据拒答",
+          ex.toString());
+      return counted(unavailable("判定调用失败"));
     }
+  }
+
+  /**
+   * 判定不可用的统一出口。
+   *
+   * <p>默认 {@code closed}：判定没跑成就不当作「有依据」，宁可返回无依据，也不让网关抖动
+   * 把可能编造的回答放过去；配置 {@code open} 可恢复失败开放。
+   */
+  private Verdict unavailable(String reason) {
+    if ("open".equals(failureMode)) {
+      return Verdict.unavailable(reason);
+    }
+    return new Verdict(false, false, reason, null, null);
   }
 
   private Verdict counted(Verdict verdict) {
@@ -140,12 +169,12 @@ public class ModelRelevanceJudge implements RelevanceJudge {
   }
 
   /** 问题 + 编号证据；证据按字符截断，避免判定请求比回答请求还大。 */
-  static String userPrompt(String question, List<String> evidenceTexts) {
+  String userPrompt(String question, List<String> evidenceTexts) {
     StringBuilder prompt = new StringBuilder("问题：").append(question).append("\n\n资料：\n");
-    int limit = Math.min(MAX_EVIDENCE, evidenceTexts.size());
+    int limit = Math.min(maxEvidence, evidenceTexts.size());
     for (int index = 0; index < limit; index++) {
       String text = evidenceTexts.get(index);
-      String body = text.length() > MAX_CHARS ? text.substring(0, MAX_CHARS) + "…" : text;
+      String body = text.length() > maxChars ? text.substring(0, maxChars) + "…" : text;
       prompt.append('[').append(index + 1).append("] ").append(body).append('\n');
     }
     return prompt.toString();
@@ -167,11 +196,11 @@ public class ModelRelevanceJudge implements RelevanceJudge {
         output = optionalLong(root.path("usage").path("completion_tokens"));
       }
     } catch (RuntimeException ex) {
-      return Verdict.unavailable("判定响应无法解析");
+      return unavailable("判定响应无法解析");
     }
     Boolean sufficient = readSufficient(content);
     if (sufficient == null) {
-      return Verdict.unavailable("判定响应缺少 sufficient 字段");
+      return unavailable("判定响应缺少 sufficient 字段");
     }
     String reason = readReason(content);
     return new Verdict(sufficient, true, reason, input, output);

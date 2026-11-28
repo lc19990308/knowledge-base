@@ -26,7 +26,9 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:16-alpine
+        # 官方 pgvector 镜像：默认迁移不加载 db/migration-pgvector，
+        # 但 VectorAnnIT 会在隔离 schema 里装扩展并验证 ANN 一致性。
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: qa
           POSTGRES_PASSWORD: qa

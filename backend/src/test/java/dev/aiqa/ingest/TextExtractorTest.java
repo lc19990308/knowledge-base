@@ -30,14 +30,32 @@ class TextExtractorTest {
   }
 
   @Test
-  void plainTextRecognizesPolicyArticlesAndPreservesUnicodeOnSplits() throws IOException {
+  void plainTextRecognizesPolicyArticlesAndSplitsLongSectionsIntoOverlappingWindows()
+      throws IOException {
     String first = "第一条 ";
-    String text = first + "甲".repeat(3999 - first.length()) + "😀";
+    String text = first + "甲".repeat(1599 - first.length());
     var chunks = extractor.extract("制度.txt", bytes(text + "\n第二条 其他规定")).chunks();
-    assertThat(chunks).hasSize(3);
-    assertThat(chunks.get(0).body() + chunks.get(1).body()).isEqualTo(text);
+    assertThat(chunks.size()).isGreaterThan(2);
+    assertThat(chunks)
+        .allSatisfy(chunk -> assertThat(chunk.body().length()).isLessThanOrEqualTo(800));
+    // 相邻窗口有 120 字重叠：长条款在边界处不会两边都缺半句。
+    assertThat(chunks.get(1).body()).startsWith(chunks.get(0).body().substring(680));
     assertThat(chunks.get(1).sourceLocation()).isEqualTo(chunks.get(0).sourceLocation());
-    assertThat(chunks.get(2)).isEqualTo(new Chunk("第二条 其他规定", "第二条 其他规定"));
+    assertThat(chunks.get(chunks.size() - 1))
+        .isEqualTo(new Chunk("第二条 其他规定", "第二条 其他规定"));
+  }
+
+  @Test
+  void splitDoesNotBreakSurrogatePairs() throws IOException {
+    String text = "甲".repeat(799) + "😀" + "乙".repeat(200);
+    var chunks = extractor.extract("制度.txt", bytes(text)).chunks();
+    assertThat(chunks)
+        .allSatisfy(
+            chunk -> {
+              String body = chunk.body();
+              assertThat(Character.isHighSurrogate(body.charAt(body.length() - 1))).isFalse();
+              assertThat(Character.isLowSurrogate(body.charAt(0))).isFalse();
+            });
   }
 
   @Test

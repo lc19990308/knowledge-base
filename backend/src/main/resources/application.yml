@@ -104,10 +104,19 @@ aiqa:
     url: ${EMBEDDING_URL:http://127.0.0.1:3437/v1}
     model: ${EMBEDDING_MODEL:qwen3-embed}
     timeout: ${EMBEDDING_TIMEOUT:PT30S}
+  chunking:
+    # 切块窗口与重叠：800 字让一个向量只概括一段语义；重叠避免条款被窗口边界切断。
+    max-chars: ${CHUNKING_MAX_CHARS:800}
+    overlap: ${CHUNKING_OVERLAP:120}
   answer:
+    # 发给模型的证据条数与单条长度：判定、生成、落库共用，保证三处输入一致。
+    evidence-max-count: ${ANSWER_EVIDENCE_MAX_COUNT:10}
+    evidence-max-chars: ${ANSWER_EVIDENCE_MAX_CHARS:800}
     # 语义相关性判定：model=有默认模型时调用网关；fake=一律通过（隔离 E2E 用）；off=关闭。
     relevance: ${RELEVANCE_GATE:model}
     relevance-timeout: ${RELEVANCE_TIMEOUT:PT20S}
+    # 判定不可用（超时/网关错误/无法解析）时：closed=按无依据拒答（默认），open=放行继续回答。
+    relevance-failure: ${RELEVANCE_FAILURE:closed}
     # 单条 SSE 增量流的最长等待：超过后客户端收到 timeout 事件并回退轮询。
     stream-timeout-seconds: ${ANSWER_STREAM_TIMEOUT_SECONDS:120}
 management:
@@ -119,3 +128,11 @@ management:
     health:
       probes:
         enabled: true
+---
+# 可选：启用 pgvector 近邻检索。扩展未安装时不要开启，否则 Flyway 迁移会失败并阻止启动。
+spring:
+  config:
+    activate:
+      on-profile: pgvector
+  flyway:
+    locations: classpath:db/migration,classpath:db/migration-pgvector

@@ -34,7 +34,29 @@ import org.springframework.stereotype.Component;
 @Component
 public class TextExtractor {
 
-  private static final int MAX_CHUNK_LENGTH = 4000;
+  private final int maxChunkLength;
+  private final int chunkOverlap;
+
+  /** 无参构造使用默认切块参数，供单元测试与不依赖 Spring 的直接调用。 */
+  public TextExtractor() {
+    this(800, 120);
+  }
+
+  /**
+   * Spring 注入切块配置：默认 800 字窗口、120 字重叠。
+   *
+   * <p>窗口从 4000 降到 800 是为了让一个向量只概括一段语义，而不是把整页内容平均掉；
+   * 重叠保证条款被窗口边界切开时，两侧至少有一侧读到完整句子。
+   */
+  @org.springframework.beans.factory.annotation.Autowired
+  public TextExtractor(
+      @org.springframework.beans.factory.annotation.Value("${aiqa.chunking.max-chars:800}")
+          int maxChunkLength,
+      @org.springframework.beans.factory.annotation.Value("${aiqa.chunking.overlap:120}")
+          int chunkOverlap) {
+    this.maxChunkLength = Math.max(200, maxChunkLength);
+    this.chunkOverlap = Math.max(0, Math.min(chunkOverlap, this.maxChunkLength / 2));
+  }
   private static final Pattern MARKDOWN_HEADING =
       Pattern.compile("^ {0,3}#{1,6}[ \\t]+(.+?)(?:[ \\t]+#+)?[ \\t]*$");
   private static final Pattern POLICY_HEADING = Pattern.compile(
@@ -296,10 +318,10 @@ public class TextExtractor {
   private void addChunks(String body, String location, List<Chunk> chunks) {
     int start = 0;
     while (start < body.length()) {
-      int end = Math.min(start + MAX_CHUNK_LENGTH, body.length());
+      int end = Math.min(start + maxChunkLength, body.length());
       if (end < body.length()) {
         int lineBreak = body.lastIndexOf('\n', end - 1);
-        if (lineBreak > start + MAX_CHUNK_LENGTH / 2) {
+        if (lineBreak > start + maxChunkLength / 2) {
           end = lineBreak + 1;
         } else if (Character.isHighSurrogate(body.charAt(end - 1))) {
           end--;
@@ -309,7 +331,11 @@ public class TextExtractor {
       if (!chunk.isBlank()) {
         chunks.add(new Chunk(chunk, location));
       }
-      start = end;
+      if (end >= body.length()) {
+        break;
+      }
+      // 窗口重叠：下一块回退 overlap 个字符，避免条款被窗口边界切断后两侧都读不完整。
+      start = Math.max(start + 1, end - chunkOverlap);
     }
   }
 }
