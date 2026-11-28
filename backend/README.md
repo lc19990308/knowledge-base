@@ -14,28 +14,47 @@ mvn spring-boot:run
 
 必需变量：`DB_URL`、`DB_USER`、`DB_PASSWORD`。常用可选变量：
 
-| 变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `OBJECT_STORE_LOCAL_ROOT` | `~/.config/ai-qa/objects` | 本地对象存储根目录，开发用 |
-| `DEV_HEADER_AUTH` | `false` | 开发身份头（`X-Dev-Subject`）；仅本地开启，生产必须关闭 |
-| `CAPTCHA_TTL` | `PT2M` | 登录图形验证码有效期；每个验证码只校验一次 |
-| `CAPTCHA_FIXED_CODE` | 空 | 固定验证码，仅供隔离 E2E 与集成测试；生产必须留空（留空即每次随机） |
-| `WORKER_ENABLED` | `true` | 是否启动解析/发布/问答后台任务 |
-| `SERVER_PORT` | `8080` | HTTP 端口 |
-| `PROCESS_ROLE` | `all` | `api`（只服务 HTTP，不跑任务）、`worker`（只消费任务，不启 Web）、`all`（本地开发） |
-| `COOKIE_SECURE` | `false` | HTTPS 部署设为 `true` |
-| `AIQA_BOOTSTRAP_ENABLED` | `true` | 无任何本地账号时初始化引导管理员和普通用户 |
-| `AIQA_BOOTSTRAP_ADMIN_PASSWORD` / `AIQA_BOOTSTRAP_USER_PASSWORD` | 内置开发值 | 初始化前通过本地环境设置。已有本地账号时不影响已保存密码 |
-| `MODEL_PROVIDER` | `fake` | 默认注册假模型供未配置网关时使用。配置可用默认模型后按其协议选真实适配器 |
-| `OBJECT_STORE_TYPE` | `local` | `local` 或 `s3`；S3 需配置 `OBJECT_STORE_S3_*` |
-| `RATE_LIMIT_WRITES_PER_MINUTE` | `120` | 每用户每分钟写操作上限 |
-| `RATE_LIMIT_QUESTIONS_PER_MINUTE` | `30` | 每用户每分钟提问上限 |
-| `MODEL_STREAM_TIMEOUT` | `PT180S` | 单次流式回答的总读取上限，到点按网关不可达处理 |
-| `ANSWER_STREAM_TIMEOUT_SECONDS` | `120` | 单条 SSE 增量流的最长等待，超时后客户端回退轮询 |
+| 变量                                                             | 默认                      | 说明                                                                                |
+| ---------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| `OBJECT_STORE_LOCAL_ROOT`                                        | `~/.config/ai-qa/objects` | 本地对象存储根目录，开发用                                                          |
+| `DEV_HEADER_AUTH`                                                | `false`                   | 开发身份头（`X-Dev-Subject`）；仅本地开启，生产必须关闭                             |
+| `CAPTCHA_TTL`                                                    | `PT2M`                    | 登录图形验证码有效期；每个验证码只校验一次                                          |
+| `CAPTCHA_FIXED_CODE`                                             | 空                        | 固定验证码，仅供隔离 E2E 与集成测试；生产必须留空（留空即每次随机）                 |
+| `WORKER_ENABLED`                                                 | `true`                    | 是否启动解析/发布/问答后台任务                                                      |
+| `SERVER_PORT`                                                    | `8080`                    | HTTP 端口                                                                           |
+| `PROCESS_ROLE`                                                   | `all`                     | `api`（只服务 HTTP，不跑任务）、`worker`（只消费任务，不启 Web）、`all`（本地开发） |
+| `COOKIE_SECURE`                                                  | `false`                   | HTTPS 部署设为 `true`                                                               |
+| `AIQA_BOOTSTRAP_ENABLED`                                         | `true`                    | 无任何本地账号时初始化引导管理员和普通用户                                          |
+| `AIQA_BOOTSTRAP_ADMIN_PASSWORD` / `AIQA_BOOTSTRAP_USER_PASSWORD` | 内置开发值                | 初始化前通过本地环境设置。已有本地账号时不影响已保存密码                            |
+| `MODEL_PROVIDER`                                                 | `fake`                    | 默认注册假模型供未配置网关时使用。配置可用默认模型后按其协议选真实适配器            |
+| `OBJECT_STORE_TYPE`                                              | `local`                   | `local` 或 `s3`；S3 需配置 `OBJECT_STORE_S3_*`                                      |
+| `RATE_LIMIT_WRITES_PER_MINUTE`                                   | `120`                     | 每用户每分钟写操作上限                                                              |
+| `RATE_LIMIT_QUESTIONS_PER_MINUTE`                                | `30`                      | 每用户每分钟提问上限                                                                |
+| `MODEL_STREAM_TIMEOUT`                                           | `PT180S`                  | 单次流式回答的总读取上限，到点按网关不可达处理                                      |
+| `ANSWER_STREAM_TIMEOUT_SECONDS`                                  | `120`                     | 单条 SSE 增量流的最长等待，超时后客户端回退轮询                                     |
 
 浏览器使用本地账号密码登录。登录前先 `GET /api/v1/auth/captcha` 取得 `captchaId` 与 PNG data URL，登录请求体必须带上 `captchaId`、`captchaCode`，验证码缺失/过期/错误返回 400 `INVALID_CAPTCHA`（先于密码校验）。交付部署不启用 `oidc` profile。`DEV_HEADER_AUTH` 仅用于本地开发。未登录可请求 `GET /api/v1/auth/csrf`，写请求携带 `data.token` 作为 `X-CSRF-TOKEN`，同时保留 `XSRF-TOKEN` Cookie。成功 JSON 返回 `{code, data, requestId}`，错误统一使用 Problem Details。登录会话使用 `QA_SESSION`。
 
 系统管理员可配置 OpenAI 兼容或 Anthropic 网关，并在全局设置中选择启用的默认模型。凭据引用由服务端属性 `aiqa.model.credentials.<归一化引用>` 解析，引用中的非 ASCII 字母数字转为下划线后转小写。密钥原文通过服务端配置注入。已登录用户可通过 `/api/v1/model-configs/options` 读取可选模型，提交问题时可传 `modelId` 仅用于本次提问。省略后由 worker 选择全局默认模型。
+
+## 向量近邻检索（可选，pgvector）
+
+默认用「词法 + 应用内余弦」，向量候选最多扫描 2000 个文本块，超过后召回不完整。文本块规模较大时启用 pgvector：
+
+```sh
+# 1. 在数据库安装扩展（需要 superuser 或已预装）
+psql "$DB" -c "CREATE EXTENSION IF NOT EXISTS vector"
+
+# 2. 启动时启用 profile，Flyway 会追加加载 db/migration-pgvector
+SPRING_PROFILES_ACTIVE=pgvector mvn spring-boot:run
+```
+
+约束：
+
+- `embedding_vec` 固定 `vector(1024)`，必须与嵌入模型维度一致；换模型需先清空重建该列。
+- 扩展未安装时**不要**启用 profile，否则迁移失败会阻止启动；未启用时检索自动降级为应用内余弦。
+- 启动日志与指标 `aiqa.retrieval.vector.mode` 标明当前模式（1=ann，0=memory）；
+  memory 模式下候选触顶会累加 `aiqa.retrieval.vector.truncated`，应视为告警。
 
 ## 验证
 

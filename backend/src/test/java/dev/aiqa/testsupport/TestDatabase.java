@@ -23,7 +23,9 @@ public final class TestDatabase implements AutoCloseable {
     this.user = user;
     this.password = password;
     this.schema = schema;
-    this.jdbcUrl = adminUrl + (adminUrl.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+    // public 一起放进 search_path：扩展（如 pgvector）装在库级 public，隔离 schema 要能解析其类型。
+    this.jdbcUrl =
+        adminUrl + (adminUrl.contains("?") ? "&" : "?") + "currentSchema=" + schema + ",public";
   }
 
   public static Optional<TestDatabase> fromEnvironment() {

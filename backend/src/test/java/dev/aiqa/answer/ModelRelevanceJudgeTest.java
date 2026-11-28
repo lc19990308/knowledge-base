@@ -14,8 +14,13 @@ class ModelRelevanceJudgeTest {
   private final MockEnvironment environment = new MockEnvironment();
 
   private ModelRelevanceJudge judge(String mode) {
+    return judge(mode, "closed");
+  }
+
+  private ModelRelevanceJudge judge(String mode, String failureMode) {
     return new ModelRelevanceJudge(
-        environment, new SimpleMeterRegistry(), mode, Duration.ofSeconds(2));
+        environment, new SimpleMeterRegistry(), mode, Duration.ofSeconds(2), failureMode,
+        10, 800);
   }
 
   private static RelevanceJudge.Model model() {
@@ -37,9 +42,17 @@ class ModelRelevanceJudgeTest {
   }
 
   @Test
-  void missingCredentialFailsOpen() {
+  void missingCredentialFailsClosedByDefault() {
     environment.setProperty("aiqa.answer.relevance", "model");
     var verdict = judge("model").judge(model(), "问题", List.of("资料"));
+    assertThat(verdict.sufficient()).isFalse();
+    assertThat(verdict.available()).isFalse();
+  }
+
+  @Test
+  void failureModeOpenKeepsAnswering() {
+    environment.setProperty("aiqa.answer.relevance", "model");
+    var verdict = judge("model", "open").judge(model(), "问题", List.of("资料"));
     assertThat(verdict.sufficient()).isTrue();
     assertThat(verdict.available()).isFalse();
   }
@@ -47,7 +60,7 @@ class ModelRelevanceJudgeTest {
   @Test
   void promptNumbersEvidenceAndTruncates() {
     String longText = "一".repeat(900);
-    String prompt = ModelRelevanceJudge.userPrompt("早餐能报多少？", List.of("第一条", longText));
+    String prompt = judge("model").userPrompt("早餐能报多少？", List.of("第一条", longText));
     assertThat(prompt).contains("问题：早餐能报多少？").contains("[1] 第一条").contains("[2] ");
     assertThat(prompt).contains("…");
     assertThat(prompt.length()).isLessThan(1500);
@@ -81,9 +94,17 @@ class ModelRelevanceJudgeTest {
   }
 
   @Test
-  void unparseableVerdictFailsOpen() {
+  void unparseableVerdictFailsClosed() {
     var verdict = judge("model").parse("{\"choices\":[{\"message\":{\"content\":\"我说不准\"}}]}",
         "openai_compatible");
+    assertThat(verdict.sufficient()).isFalse();
+    assertThat(verdict.available()).isFalse();
+  }
+
+  @Test
+  void unparseableVerdictFailsOpenWhenConfigured() {
+    var verdict = judge("model", "open").parse(
+        "{\"choices\":[{\"message\":{\"content\":\"我说不准\"}}]}", "openai_compatible");
     assertThat(verdict.sufficient()).isTrue();
     assertThat(verdict.available()).isFalse();
   }

@@ -1434,6 +1434,14 @@ onBeforeUnmount(() => {
                           </button>
                         </div>
                       </div>
+                      <p
+                        v-else-if="
+                          paragraph.kind && paragraph.kind !== 'NO_EVIDENCE'
+                        "
+                        class="cite-missing"
+                      >
+                        本条答案未标注来源，请结合原文核对。
+                      </p>
                     </template>
                   </div>
                   <p v-if="exchange.paragraphs.length === 0" class="bk-muted">
@@ -1997,6 +2005,15 @@ onBeforeUnmount(() => {
   margin-top: var(--space-3);
   border-top: 1px solid var(--color-divider);
   padding-top: var(--space-3);
+}
+
+/* 模型没有标注引用时的提示：答案照常展示，但明确告诉用户无法据引用核对。 */
+.cite-missing {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-divider);
+  padding-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 
 .cite-label {

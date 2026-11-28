@@ -17,8 +17,8 @@ public class AnswerService {
 
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AnswerService.class);
 
-  private static final int CANDIDATE_LIMIT = 20;
-  /** 向量召回参与排序的候选上限；语料变大后应改为数据库侧近邻检索。 */
+  private static final int CANDIDATE_LIMIT = 24;
+  /** 内存余弦模式最多扫描的候选条数；启用 pgvector 后由数据库按余弦取最近邻，不再受此限制。 */
   private static final int VECTOR_SCAN_LIMIT = 2000;
   private static final int VECTOR_TOP = 60;
 
@@ -38,6 +38,9 @@ public class AnswerService {
 
   private static final String NO_EVIDENCE_TEXT = "当前可访问且已发布的资料中没有能够支持回答的内容。";
 
+  /** 判定服务不可用且按拒答处理时的文案：与「资料中没有」区分，避免用户误以为语料缺失。 */
+  private static final String NO_EVIDENCE_UNAVAILABLE_TEXT = "暂时无法确认回答依据，请稍后重试。";
+
   private final JdbcClient jdbc;
   private final KeywordSearch keywords;
   private final QuestionRepository questions;
@@ -49,7 +52,13 @@ public class AnswerService {
   private final dev.aiqa.template.AnswerTemplateRepository templateRows;
   private final RelevanceJudge relevance;
   private final dev.aiqa.search.EmbeddingClient embeddings;
+  private final dev.aiqa.search.VectorIndex vectors;
   private final AnswerStreams streams;
+  /** 发给模型的证据条数：判定、生成与落库共用，避免三处看到不同输入。 */
+  private final int evidenceMaxCount;
+
+  /** 单条证据进 prompt 前截断到与判定器相同的长度，保证两边文本一致。 */
+  private final int evidenceMaxChars;
 
   public AnswerService(
       JdbcClient jdbc,
@@ -63,7 +72,12 @@ public class AnswerService {
       dev.aiqa.template.AnswerTemplateRepository templateRows,
       RelevanceJudge relevance,
       dev.aiqa.search.EmbeddingClient embeddings,
-      AnswerStreams streams) {
+      dev.aiqa.search.VectorIndex vectors,
+      AnswerStreams streams,
+      @org.springframework.beans.factory.annotation.Value("${aiqa.answer.evidence-max-count:10}")
+          int evidenceMaxCount,
+      @org.springframework.beans.factory.annotation.Value("${aiqa.answer.evidence-max-chars:800}")
+          int evidenceMaxChars) {
     this.jdbc = jdbc;
     this.keywords = keywords;
     this.questions = questions;
@@ -75,7 +89,10 @@ public class AnswerService {
     this.templateRows = templateRows;
     this.relevance = relevance;
     this.embeddings = embeddings;
+    this.vectors = vectors;
     this.streams = streams;
+    this.evidenceMaxCount = Math.max(1, evidenceMaxCount);
+    this.evidenceMaxChars = Math.max(200, evidenceMaxChars);
   }
 
   public record EvidenceCandidate(
@@ -117,7 +134,8 @@ public class AnswerService {
   /** 按关键词取候选，顺序即词法相关度。 */
   private List<EvidenceCandidate> lexicalCandidates(
       UUID questionId, UUID userId, List<UUID> allowed, String query, int limit) {
-    List<Map<String, Object>> rows = candidateRows(questionId, userId, allowed, query, limit, false);
+    List<Map<String, Object>> rows =
+        candidateRows(questionId, userId, allowed, query, limit, false, null);
     List<EvidenceCandidate> evidence = new ArrayList<>(rows.size());
     for (Map<String, Object> row : rows) {
       evidence.add(candidate(row));
@@ -125,33 +143,49 @@ public class AnswerService {
     return evidence;
   }
 
-  /** 向量候选：同一授权与发布范围里已有向量的文本块，按余弦在内存中排序后截断。 */
+  /** 向量候选：有 pgvector 时由数据库按余弦取最近邻，否则内存扫描后截断。 */
   private List<HybridRanker.VectorCandidate<EvidenceCandidate>> vectorCandidates(
       UUID questionId, UUID userId, List<UUID> allowed, float[] queryVector) {
+    boolean ann = vectors.ann();
+    int limit = ann ? VECTOR_TOP : VECTOR_SCAN_LIMIT;
     List<Map<String, Object>> rows =
-        candidateRows(questionId, userId, allowed, "", VECTOR_SCAN_LIMIT, true);
-    List<HybridRanker.VectorCandidate<EvidenceCandidate>> vectors =
+        candidateRows(questionId, userId, allowed, "", limit, true, queryVector);
+    meters.counter("aiqa.retrieval.vector.scanned").increment(rows.size());
+    if (!ann && rows.size() >= VECTOR_SCAN_LIMIT) {
+      // 内存模式只能扫固定条数；到上限说明候选被截断，向量召回已经不完整。
+      meters.counter("aiqa.retrieval.vector.truncated").increment();
+    }
+    List<HybridRanker.VectorCandidate<EvidenceCandidate>> candidates =
         new ArrayList<>(rows.size());
     for (Map<String, Object> row : rows) {
       float[] embedding = toVector(row.get("embedding"));
       if (embedding == null || embedding.length != queryVector.length) {
         continue;
       }
-      vectors.add(new HybridRanker.VectorCandidate<>(candidate(row), embedding));
+      candidates.add(new HybridRanker.VectorCandidate<>(candidate(row), embedding));
     }
     // 只保留最相似的一批，避免把整个空间的向量都参与排序。
-    vectors.sort((left, right) -> Double.compare(
+    candidates.sort((left, right) -> Double.compare(
         dev.aiqa.search.EmbeddingClient.cosine(queryVector, right.embedding()),
         dev.aiqa.search.EmbeddingClient.cosine(queryVector, left.embedding())));
-    return vectors.size() > VECTOR_TOP ? vectors.subList(0, VECTOR_TOP) : vectors;
+    return candidates.size() > VECTOR_TOP
+        ? candidates.subList(0, VECTOR_TOP)
+        : candidates;
   }
 
   /** 候选查询的公共骨架：授权、当前发布、快照与助手绑定条件完全一致，只切换过滤与排序。 */
   private List<Map<String, Object>> candidateRows(
       UUID questionId, UUID userId, List<UUID> allowed, String query, int limit,
-      boolean withEmbedding) {
-    String filter = withEmbedding ? "c.embedding IS NOT NULL" : KeywordSearch.MATCH;
-    String order = withEmbedding ? "c.id" : KeywordSearch.SCORE + " DESC, s.id, v.id, c.ordinal";
+      boolean withEmbedding, float[] queryVector) {
+    boolean ann = withEmbedding && vectors.ann();
+    String filter =
+        !withEmbedding
+            ? KeywordSearch.MATCH
+            : ann ? "c.embedding_vec IS NOT NULL" : "c.embedding IS NOT NULL";
+    String order =
+        !withEmbedding
+            ? KeywordSearch.SCORE + " DESC, s.id, v.id, c.ordinal"
+            : ann ? "c.embedding_vec <=> CAST(:queryVec AS vector)" : "c.id";
     String sql =
         """
         SELECT s.id AS space_id, pub.id AS publication_id, pub.epoch,
@@ -184,7 +218,31 @@ public class AnswerService {
     if (!withEmbedding) {
       statement = statement.param("query", query);
     }
+    if (ann) {
+      statement =
+          statement.param(
+              "queryVec", dev.aiqa.search.EmbeddingClient.vectorLiteral(queryVector));
+    }
     return statement.query().listOfRows();
+  }
+
+  /** 发给模型的证据：按重排后的顺序取前 N 条并截断，判定、生成与落库都从这里取。 */
+  private List<EvidenceCandidate> selectEvidence(List<EvidenceCandidate> ordered) {
+    return ordered.stream().limit(evidenceMaxCount).map(this::truncateEvidence).toList();
+  }
+
+  /** 单条证据超长时截断并保留省略号；与判定器使用同一上限。 */
+  private EvidenceCandidate truncateEvidence(EvidenceCandidate candidate) {
+    String text = candidate.text();
+    if (text == null || text.length() <= evidenceMaxChars) {
+      return candidate;
+    }
+    return new EvidenceCandidate(
+        candidate.spaceId(), candidate.publicationId(), candidate.epoch(),
+        candidate.documentVersionId(), candidate.documentName(),
+        text.substring(0, evidenceMaxChars) + "…", candidate.sourceLocation(),
+        candidate.validity(), candidate.policyState(), candidate.effectiveUntil(),
+        candidate.versionNumber(), candidate.chunkId());
   }
 
   /** 把一行查询结果转成证据候选，政策有效性在此统一折算。 */
@@ -304,6 +362,8 @@ public class AnswerService {
     // 覆盖优先重排：复合问题的各个方面都进入靠前候选，而不是被同一文档的相近片段占满。
     List<EvidenceCandidate> ordered =
         EvidenceSupport.rerank(questionTokens, candidates, EvidenceCandidate::text);
+    // 判定、生成、落库共用同一批证据：三处输入不一致会出现「判定说够、模型却没看到」。
+    List<EvidenceCandidate> selected = selectEvidence(ordered);
     String callId = UUID.randomUUID().toString();
     // The template entity is the single source; an unset or disabled template falls through.
     UUID assistantId =
@@ -342,9 +402,7 @@ public class AnswerService {
             : new RelevanceJudge.Model(
                 gateway.protocol(), gateway.baseUrl(), gateway.modelName(), gateway.credentialRef()),
         question.text(),
-        ordered.stream().limit(8)
-            .map(c -> c.validity().name() + "｜" + c.text())
-            .toList());
+        selected.stream().map(c -> c.validity().name() + "｜" + c.text()).toList());
     if (verdict.inputTokens() != null || verdict.outputTokens() != null) {
       // 判定本身也花 Tokens，单独记一条用量，统计里不吞掉。
       questions.recordUsage(UUID.randomUUID().toString(), questionId, question.userId(),
@@ -352,11 +410,15 @@ public class AnswerService {
     }
     if (!verdict.sufficient()) {
       log.info("相关性判定为无依据 question={} reason={}", questionId, verdict.reason());
-      returnNoEvidence(questionId, question.conversationId());
+      // 判定真正执行过（available）才说明"资料里没有"；不可用是服务问题，文案要区分。
+      returnNoEvidence(
+          questionId,
+          question.conversationId(),
+          verdict.available() ? NO_EVIDENCE_TEXT : NO_EVIDENCE_UNAVAILABLE_TEXT);
       return true;
     }
     List<AnswerModel.EvidenceSource> sources =
-        ordered.stream()
+        selected.stream()
             .map(c -> new AnswerModel.EvidenceSource(
                 c.spaceId().toString(), c.publicationId().toString(), c.epoch(),
                 c.documentVersionId().toString(), c.documentName(), c.text(),
@@ -381,7 +443,7 @@ public class AnswerService {
       log.warn("模型网关调用失败 question={}", questionId, ex);
       return true;
     }
-    if (!stillCurrent(ordered, questionId, question.userId())) {
+    if (!stillCurrent(selected, questionId, question.userId())) {
       questions.fail(questionId, "CONTEXT_CHANGED");
       return true;
     }
@@ -393,17 +455,22 @@ public class AnswerService {
       meters.counter("aiqa.model.usage.unreported").increment();
     }
     // 政策有效性决定段落类型：全失效、待核实、或同一文件名多版本并存时冲突。
-    String kind = paragraphKind(ordered, rendered.citedEvidenceIndexes());
+    if (rendered.citedEvidenceIndexes().isEmpty()) {
+      // 模型没有标注任何引用：引用列表为空、前端提示「未标注来源」，这里记指标便于发现退化。
+      meters.counter("aiqa.answer.uncited").increment();
+      log.info("回答未标注引用 question={} evidence={}", questionId, selected.size());
+    }
+    String kind = paragraphKind(selected, rendered.citedEvidenceIndexes());
     UUID paragraphId = questions.insertParagraph(questionId, 0, rendered.text(), kind);
-    for (int index = 0; index < ordered.size(); index++) {
-      EvidenceCandidate candidate = ordered.get(index);
+    for (int index = 0; index < selected.size(); index++) {
+      EvidenceCandidate candidate = selected.get(index);
       questions.insertEvidence(paragraphId, callId, index, candidate.spaceId(),
           candidate.publicationId(), candidate.epoch(), candidate.documentVersionId(),
            candidate.text(), candidate.sourceLocation());
     }
     for (Integer cited : rendered.citedEvidenceIndexes().stream().distinct().toList()) {
-      if (cited >= 0 && cited < ordered.size()) {
-        EvidenceCandidate candidate = ordered.get(cited);
+      if (cited >= 0 && cited < selected.size()) {
+        EvidenceCandidate candidate = selected.get(cited);
         questions.insertCitation(paragraphId, callId, cited, candidate.documentName());
       }
     }
@@ -423,15 +490,16 @@ public class AnswerService {
    * 由每条引用的有效期各自标注效力。
    *
    * <p>冲突判定依据可核对的事实：同一文件名在同一快照里存在多个版本，且都处于生效状态。
+   *
+   * <p>模型没有标注引用时按「无引用」判断，不再回退到全部候选证据：回退会让未使用的证据参与
+   * 冲突与失效判定，把正常回答误标成 CONFLICT/EXPIRED。
    */
   private String paragraphKind(List<EvidenceCandidate> candidates, List<Integer> cited) {
     List<EvidenceCandidate> used =
-        cited.isEmpty()
-            ? candidates
-            : cited.stream()
-                .filter(index -> index >= 0 && index < candidates.size())
-                .map(candidates::get)
-                .toList();
+        cited.stream()
+            .filter(index -> index >= 0 && index < candidates.size())
+            .map(candidates::get)
+            .toList();
     java.util.Map<String, java.util.Set<Integer>> versionsByName = new java.util.HashMap<>();
     for (EvidenceCandidate candidate : used) {
       if (candidate.validity() == PolicyValidity.State.EFFECTIVE) {
@@ -470,7 +538,12 @@ public class AnswerService {
 
   /** 无依据收尾：写一条不带引用的 NO_EVIDENCE 段落，不产生用量与引用记录。 */
   private void returnNoEvidence(UUID questionId, UUID conversationId) {
-    questions.insertParagraph(questionId, 0, NO_EVIDENCE_TEXT, "NO_EVIDENCE");
+    returnNoEvidence(questionId, conversationId, NO_EVIDENCE_TEXT);
+  }
+
+  /** 指定文案的无依据收尾：判定不可用时用「暂时无法确认」，区别于「资料中没有」。 */
+  private void returnNoEvidence(UUID questionId, UUID conversationId, String text) {
+    questions.insertParagraph(questionId, 0, text, "NO_EVIDENCE");
     questions.succeed(questionId);
     conversations.touch(conversationId);
   }

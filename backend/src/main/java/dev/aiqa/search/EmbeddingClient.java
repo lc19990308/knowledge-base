@@ -150,6 +150,15 @@ public class EmbeddingClient {
     return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
   }
 
+  /**
+   * pgvector 的文本字面量：把 PostgreSQL 数组写法 {@code {1,2}} 换成 {@code [1,2]}，
+   * 供 {@code CAST(:vec AS vector)} 使用；两列写的是同一组数值，避免两套格式化逻辑漂移。
+   */
+  public static String vectorLiteral(float[] vector) {
+    String array = literal(vector);
+    return array == null ? null : "[" + array.substring(1, array.length() - 1) + "]";
+  }
+
   /** PostgreSQL real[] 字面量；null 保持 null 以便列存 NULL。 */
   public static String literal(float[] vector) {
     if (vector == null || vector.length == 0) {

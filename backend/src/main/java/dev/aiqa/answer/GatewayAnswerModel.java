@@ -167,11 +167,9 @@ public abstract class GatewayAnswerModel implements AnswerModel {
       }
     }
     if (ordered.isEmpty()) {
-      List<Integer> all = new java.util.ArrayList<>();
-      for (int index = 0; index < evidenceSize; index++) {
-        all.add(index);
-      }
-      return all;
+      // 模型没有标注任何引用时不能把全部证据都当成引用：那会让「引用可核对」静默失真，
+      // 用户会看到一堆模型并未使用的来源。宁可显式返回空，由前端提示「未标注来源」。
+      return List.of();
     }
     return List.copyOf(ordered.keySet());
   }

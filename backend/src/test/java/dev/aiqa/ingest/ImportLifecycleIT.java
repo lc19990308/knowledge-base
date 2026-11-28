@@ -144,7 +144,10 @@ class ImportLifecycleIT {
     context.register(TransactionConfig.class);
     context.registerBean(DataSourceTransactionManager.class, () -> new DataSourceTransactionManager(source));
     context.registerBean(JobRepository.class, () -> new JobRepository(jdbc, 500, 2500, 200, 200, 200, 200, 200, 50, 5, 2, 1, 1, 2, 1, 1));
-    context.registerBean(DocumentRepository.class, () -> new DocumentRepository(jdbc));
+    context.registerBean(
+        DocumentRepository.class,
+        () -> new DocumentRepository(
+            jdbc, new dev.aiqa.search.VectorIndex(jdbc, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())));
     context.registerBean(ImportRepository.class, () -> new ImportRepository(jdbc));
     context.registerBean(ImportService.class, () -> new ImportService(mock(SpaceService.class),
         new SpaceRepository(jdbc), context.getBean(DocumentRepository.class), context.getBean(ImportRepository.class),
